@@ -10,7 +10,7 @@ ORIGIN_LONG=$sahab_long
 DEST_LAT=$tarasht_lat
 DEST_LONG=$tarasht_long
 
-source ./default.env
+source ./.env
 
 curl 'https://api.tapsi.cab/api/v3/ride/preview' \
   -s \
