@@ -1,33 +1,15 @@
-const STORAGE_KEY = "tapnap_route";
-const CLIENT_ID_KEY = "tapnap_client_id";
-
 const state = {
   mode: "origin",
-  route: null,
+  newJobRoute: { origin: null, destination: null },
+  jobs: [],
+  selectedJobId: null,
+  pendingDeleteId: null,
 };
-
-// No accounts/login -- each browser keeps its own id so everyone gets
-// their own saved route and their own chart instead of sharing one
-// global route that whoever saved last overwrites for everyone else.
-function getClientId() {
-  let id = localStorage.getItem(CLIENT_ID_KEY);
-  if (!id) {
-    id = crypto.randomUUID();
-    try {
-      localStorage.setItem(CLIENT_ID_KEY, id);
-    } catch {
-      /* localStorage unavailable -- id just won't persist across reloads */
-    }
-  }
-  return id;
-}
-
-const CLIENT_ID = getClientId();
 
 function apiFetch(url, options = {}) {
   return fetch(url, {
     ...options,
-    headers: { ...options.headers, "X-Client-Id": CLIENT_ID },
+    headers: { ...options.headers, "Content-Type": "application/json" },
   });
 }
 
@@ -46,63 +28,31 @@ function makeIcon(colorClass) {
   });
 }
 
-const originMarker = L.marker([0, 0], { icon: makeIcon("origin"), draggable: true }).addTo(map);
-const destinationMarker = L.marker([0, 0], { icon: makeIcon("destination"), draggable: true }).addTo(map);
+const originMarker = L.marker([0, 0], { icon: makeIcon("origin"), draggable: true });
+const destinationMarker = L.marker([0, 0], { icon: makeIcon("destination"), draggable: true });
 
-function loadCachedRoute() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+const DEFAULT_ORIGIN = { lat: 35.6997, lng: 51.338, label: "میدان آزادی" };
+const DEFAULT_DESTINATION = { lat: 35.7448, lng: 51.3752, label: "برج میلاد" };
+
+function applyPointToMap(kind, point) {
+  state.newJobRoute[kind] = point;
+  const marker = kind === "origin" ? originMarker : destinationMarker;
+  if (!map.hasLayer(marker)) marker.addTo(map);
+  marker.setLatLng([point.lat, point.lng]);
+  document.getElementById(`${kind}-label`).textContent =
+    point.label || `${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`;
 }
 
-function cacheRoute(route) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(route));
-  } catch {
-    /* localStorage unavailable (private mode etc.) -- non-fatal */
-  }
-}
-
-function applyRouteToMap(route) {
-  state.route = route;
-  originMarker.setLatLng([route.origin.lat, route.origin.lng]);
-  destinationMarker.setLatLng([route.destination.lat, route.destination.lng]);
-  document.getElementById("origin-label").textContent =
-    route.origin.label || `${route.origin.lat.toFixed(4)}, ${route.origin.lng.toFixed(4)}`;
-  document.getElementById("destination-label").textContent =
-    route.destination.label || `${route.destination.lat.toFixed(4)}, ${route.destination.lng.toFixed(4)}`;
-  const bounds = L.latLngBounds([
-    [route.origin.lat, route.origin.lng],
-    [route.destination.lat, route.destination.lng],
-  ]);
-  map.fitBounds(bounds, { padding: [40, 40] });
-}
-
-async function initRoute() {
-  const cached = loadCachedRoute();
-  if (cached) applyRouteToMap(cached);
-
-  try {
-    const resp = await apiFetch("/api/route");
-    if (resp.ok) {
-      const serverRoute = await resp.json();
-      applyRouteToMap(serverRoute);
-      cacheRoute(serverRoute);
-      return;
-    }
-  } catch {
-    /* backend unreachable -- fall back to cached/default below */
-  }
-
-  if (!cached) {
-    applyRouteToMap({
-      origin: { lat: 35.6997, lng: 51.338, label: "میدان آزادی" },
-      destination: { lat: 35.7448, lng: 51.3752, label: "برج میلاد" },
-    });
-  }
+function initNewJobMap() {
+  applyPointToMap("origin", DEFAULT_ORIGIN);
+  applyPointToMap("destination", DEFAULT_DESTINATION);
+  map.fitBounds(
+    L.latLngBounds([
+      [DEFAULT_ORIGIN.lat, DEFAULT_ORIGIN.lng],
+      [DEFAULT_DESTINATION.lat, DEFAULT_DESTINATION.lng],
+    ]),
+    { padding: [40, 40] },
+  );
 }
 
 function setMode(mode) {
@@ -116,47 +66,180 @@ document.getElementById("mode-origin").addEventListener("click", () => setMode("
 document.getElementById("mode-destination").addEventListener("click", () => setMode("destination"));
 
 map.on("click", (e) => {
-  const point = { lat: e.latlng.lat, lng: e.latlng.lng, label: null };
-  if (state.mode === "origin") {
-    state.route.origin = point;
-    originMarker.setLatLng(e.latlng);
-    document.getElementById("origin-label").textContent = `${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`;
-  } else {
-    state.route.destination = point;
-    destinationMarker.setLatLng(e.latlng);
-    document.getElementById("destination-label").textContent = `${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`;
-  }
+  applyPointToMap(state.mode, { lat: e.latlng.lat, lng: e.latlng.lng, label: null });
 });
 
 originMarker.on("dragend", () => {
   const { lat, lng } = originMarker.getLatLng();
-  state.route.origin = { lat, lng, label: null };
-  document.getElementById("origin-label").textContent = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  applyPointToMap("origin", { lat, lng, label: null });
 });
 
 destinationMarker.on("dragend", () => {
   const { lat, lng } = destinationMarker.getLatLng();
-  state.route.destination = { lat, lng, label: null };
-  document.getElementById("destination-label").textContent = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  applyPointToMap("destination", { lat, lng, label: null });
 });
 
-document.getElementById("save-route").addEventListener("click", async () => {
+document.getElementById("save-job").addEventListener("click", async () => {
   const statusEl = document.getElementById("save-status");
-  statusEl.textContent = "در حال ذخیره…";
-  cacheRoute(state.route);
+  const name = document.getElementById("job-name").value.trim();
+  const { origin, destination } = state.newJobRoute;
+  if (!name) {
+    statusEl.textContent = "اول یک اسم برای کار بذار.";
+    return;
+  }
+  if (!origin || !destination) {
+    statusEl.textContent = "مبدا و مقصد رو روی نقشه مشخص کن.";
+    return;
+  }
+  statusEl.textContent = "در حال افزودن…";
   try {
-    const resp = await apiFetch("/api/route", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(state.route),
+    const resp = await apiFetch("/api/jobs", {
+      method: "POST",
+      body: JSON.stringify({ name, origin, destination }),
     });
-    statusEl.textContent = resp.ok ? "ذخیره شد ✓" : "خطا در ذخیره روی سرور (فقط محلی ذخیره شد)";
-    if (resp.ok) loadChart();
+    if (resp.ok) {
+      const job = await resp.json();
+      statusEl.textContent = "اضافه شد ✓";
+      document.getElementById("job-name").value = "";
+      state.selectedJobId = job.id;
+      await loadJobs();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      statusEl.textContent = err.detail || "خطا در افزودن کار.";
+    }
   } catch {
-    statusEl.textContent = "سرور در دسترس نیست (فقط محلی ذخیره شد)";
+    statusEl.textContent = "سرور در دسترس نیست.";
   }
   setTimeout(() => (statusEl.textContent = ""), 4000);
 });
+
+// ---- jobs list ----
+
+const STATUS_LABELS = {
+  running: "در حال اجرا",
+  stopped: "متوقف",
+  error: "خطا",
+  pending: "در انتظار اولین دریافت",
+};
+
+function jobRouteText(job) {
+  const o = job.origin.label || `${job.origin.lat.toFixed(4)}, ${job.origin.lng.toFixed(4)}`;
+  const d = job.destination.label || `${job.destination.lat.toFixed(4)}, ${job.destination.lng.toFixed(4)}`;
+  return `${o} ← ${d}`;
+}
+
+function renderJobs() {
+  const el = document.getElementById("jobs-list");
+  if (!state.jobs.length) {
+    el.textContent = "هنوز هیچ کاری تعریف نشده.";
+    return;
+  }
+  el.innerHTML = "";
+  for (const job of state.jobs) {
+    const card = document.createElement("div");
+    card.className = "job-card" + (job.id === state.selectedJobId ? " selected" : "");
+    card.dataset.jobId = job.id;
+
+    const info = document.createElement("div");
+    info.className = "job-info";
+    info.innerHTML = `
+      <div class="job-name">${job.name}</div>
+      <div class="job-route">${jobRouteText(job)}</div>
+    `;
+    info.addEventListener("click", () => selectJob(job.id));
+
+    const badge = document.createElement("span");
+    badge.className = `status-badge status-${job.status}`;
+    badge.textContent = STATUS_LABELS[job.status] || job.status;
+
+    const toggleBtn = document.createElement("button");
+    toggleBtn.className = "job-btn";
+    toggleBtn.textContent = job.active ? "غیرفعال کردن" : "فعال کردن";
+    toggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleJobActive(job);
+    });
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "job-btn job-btn-danger";
+    deleteBtn.textContent = state.pendingDeleteId === job.id ? "مطمئنی؟ دوباره بزن" : "حذف";
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteJob(job);
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "job-actions";
+    actions.append(badge, toggleBtn, deleteBtn);
+
+    card.append(info, actions);
+    el.appendChild(card);
+  }
+}
+
+async function loadJobs() {
+  try {
+    const resp = await fetch("/api/jobs");
+    if (!resp.ok) throw new Error("bad response");
+    state.jobs = await resp.json();
+  } catch {
+    document.getElementById("jobs-list").textContent = "سرور در دسترس نیست";
+    return;
+  }
+
+  if (state.selectedJobId == null || !state.jobs.some((j) => j.id === state.selectedJobId)) {
+    state.selectedJobId = state.jobs.length ? state.jobs[0].id : null;
+  }
+
+  renderJobs();
+  await Promise.all([loadChart(), loadStatus()]);
+}
+
+function selectJob(jobId) {
+  state.selectedJobId = jobId;
+  renderJobs();
+  loadChart();
+  loadStatus();
+}
+
+async function toggleJobActive(job) {
+  try {
+    const resp = await apiFetch(`/api/jobs/${job.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ active: !job.active }),
+    });
+    if (resp.ok) await loadJobs();
+  } catch {
+    /* transient network failure -- next poll will retry */
+  }
+}
+
+async function deleteJob(job) {
+  if (state.pendingDeleteId !== job.id) {
+    // Two-click confirm instead of a native confirm() dialog, which
+    // would block the whole page (and this app's own browser-automation
+    // testing) until dismissed.
+    state.pendingDeleteId = job.id;
+    renderJobs();
+    setTimeout(() => {
+      if (state.pendingDeleteId === job.id) {
+        state.pendingDeleteId = null;
+        renderJobs();
+      }
+    }, 5000); // generous window -- a mis-timed second click just re-arms the confirm, never deletes silently
+    return;
+  }
+  state.pendingDeleteId = null;
+  try {
+    const resp = await apiFetch(`/api/jobs/${job.id}`, { method: "DELETE" });
+    if (resp.ok) {
+      if (state.selectedJobId === job.id) state.selectedJobId = null;
+      await loadJobs();
+    }
+  } catch {
+    /* transient network failure -- user can retry */
+  }
+}
 
 // ---- chart ----
 
@@ -168,18 +251,37 @@ function formatTime(iso) {
   return d.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
 }
 
+function selectedJob() {
+  return state.jobs.find((j) => j.id === state.selectedJobId) || null;
+}
+
 async function loadChart() {
+  const job = selectedJob();
+  const canvas = document.getElementById("price-chart");
+  const noDataMsg = document.getElementById("no-data-msg");
+  const noJobMsg = document.getElementById("no-job-msg");
+  document.getElementById("chart-job-name").textContent = job ? job.name : "—";
+
+  if (!job) {
+    if (chart) {
+      chart.destroy();
+      chart = null;
+    }
+    canvas.hidden = true;
+    noDataMsg.hidden = true;
+    noJobMsg.hidden = false;
+    return;
+  }
+  noJobMsg.hidden = true;
+
   const hours = document.getElementById("range-select").value;
   let rows = [];
   try {
-    const resp = await apiFetch(`/api/prices?hours=${hours}`);
+    const resp = await fetch(`/api/jobs/${job.id}/prices?hours=${hours}`);
     if (resp.ok) rows = await resp.json();
   } catch {
     return;
   }
-
-  const noDataMsg = document.getElementById("no-data-msg");
-  const canvas = document.getElementById("price-chart");
 
   if (rows.length === 0) {
     noDataMsg.hidden = false;
@@ -230,9 +332,17 @@ document.getElementById("range-select").addEventListener("change", loadChart);
 // ---- status ----
 
 async function loadStatus() {
+  const job = selectedJob();
   const el = document.getElementById("status-list");
+  document.getElementById("status-job-name").textContent = job ? job.name : "—";
+
+  if (!job) {
+    el.textContent = "هیچ کاری انتخاب نشده";
+    return;
+  }
+
   try {
-    const resp = await apiFetch("/api/status");
+    const resp = await fetch(`/api/jobs/${job.id}`);
     if (!resp.ok) throw new Error("bad response");
     const data = await resp.json();
     if (!data.last_fetch.length) {
@@ -321,9 +431,7 @@ document.getElementById("admin-verify-otp").addEventListener("click", async () =
 });
 
 (async function main() {
-  await initRoute();
-  await loadChart();
-  await loadStatus();
-  setInterval(loadChart, 60000);
-  setInterval(loadStatus, 60000);
+  initNewJobMap();
+  await loadJobs();
+  setInterval(loadJobs, 30000);
 })();

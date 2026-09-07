@@ -36,9 +36,14 @@ class Point(BaseModel):
     label: str | None = None
 
 
-class RouteIn(BaseModel):
+class JobIn(BaseModel):
+    name: str
     origin: Point
     destination: Point
+
+
+class JobActiveIn(BaseModel):
+    active: bool
 
 
 class OtpRequestIn(BaseModel):
@@ -61,38 +66,72 @@ def _check_admin_password(x_admin_password: str | None):
         raise HTTPException(401, "invalid admin password")
 
 
-def _client_id(x_client_id: str | None) -> str:
-    # No accounts/login -- each browser generates its own id (see app.js)
-    # and sends it as this header. Anyone who doesn't (curl, old cache)
-    # shares the fallback "default" bucket rather than erroring out.
-    return x_client_id or db.DEFAULT_CLIENT_ID
+def _get_job_or_404(job_id: int) -> dict:
+    job = db.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+    return job
 
 
-@app.get("/api/route")
-def api_get_route(x_client_id: str | None = Header(default=None)):
-    return db.get_route(_client_id(x_client_id))
+def _job_status(job: dict, last_fetch: list[dict]) -> str:
+    """"stopped" if switched off, "pending" if switched on but never
+    fetched yet, "error" if the latest attempt for any provider failed,
+    else "running"."""
+    if not job["active"]:
+        return "stopped"
+    if not last_fetch:
+        return "pending"
+    if any(not entry["ok"] for entry in last_fetch):
+        return "error"
+    return "running"
 
 
-@app.put("/api/route")
-def api_set_route(route: RouteIn, x_client_id: str | None = Header(default=None)):
-    client_id = _client_id(x_client_id)
-    db.set_route(client_id, route.origin.model_dump(), route.destination.model_dump())
-    return db.get_route(client_id)
+@app.get("/api/jobs")
+def api_list_jobs():
+    jobs = db.get_jobs()
+    result = []
+    for job in jobs:
+        last_fetch = db.get_last_fetch_status(job["id"])
+        result.append({**job, "status": _job_status(job, last_fetch)})
+    return result
 
 
-@app.get("/api/prices")
-def api_get_prices(hours: int = 24, x_client_id: str | None = Header(default=None)):
+@app.post("/api/jobs")
+def api_create_job(job: JobIn):
+    name = job.name.strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+    return db.create_job(name, job.origin.model_dump(), job.destination.model_dump())
+
+
+@app.get("/api/jobs/{job_id}")
+def api_get_job(job_id: int):
+    job = _get_job_or_404(job_id)
+    last_fetch = db.get_last_fetch_status(job_id)
+    return {**job, "status": _job_status(job, last_fetch), "last_fetch": last_fetch}
+
+
+@app.patch("/api/jobs/{job_id}")
+def api_set_job_active(job_id: int, body: JobActiveIn):
+    _get_job_or_404(job_id)
+    job = db.set_job_active(job_id, body.active)
+    return {**job, "status": _job_status(job, db.get_last_fetch_status(job_id))}
+
+
+@app.delete("/api/jobs/{job_id}")
+def api_delete_job(job_id: int):
+    if not db.delete_job(job_id):
+        raise HTTPException(404, "job not found")
+    return {"ok": True}
+
+
+@app.get("/api/jobs/{job_id}/prices")
+def api_get_job_prices(job_id: int, hours: int = 24):
+    _get_job_or_404(job_id)
     if hours <= 0 or hours > 24 * 30:
         raise HTTPException(400, "hours must be between 1 and 720")
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    route = db.get_route(_client_id(x_client_id))
-    return db.get_prices(since, route["origin"], route["destination"])
-
-
-@app.get("/api/status")
-def api_status(x_client_id: str | None = Header(default=None)):
-    route = db.get_route(_client_id(x_client_id))
-    return {"route": route, "last_fetch": db.get_last_fetch_status(route["origin"], route["destination"])}
+    return db.get_prices(job_id, since)
 
 
 @app.post("/api/fetch-now")

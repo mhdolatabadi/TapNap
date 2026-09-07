@@ -10,30 +10,38 @@
 <body>
 <header>
   <h1>Tapnap</h1>
-  <p class="subtitle">قیمت لحظه‌ای اسنپ و تپسی، هر ۱۰ دقیقه</p>
+  <p class="subtitle">قیمت لحظه‌ای اسنپ و تپسی، برای چند مسیر همزمان</p>
 </header>
 
 <main>
-  <section class="panel" id="route-panel">
+  <section class="panel" id="jobs-panel">
     <div class="panel-head">
-      <h2>مسیر</h2>
+      <h2>کارهای پایش قیمت</h2>
+    </div>
+    <div id="jobs-list">در حال بارگذاری…</div>
+  </section>
+
+  <section class="panel" id="new-job-panel">
+    <div class="panel-head">
+      <h2>کار جدید</h2>
       <div class="mode-buttons">
         <button id="mode-origin" class="mode-btn active" data-mode="origin">تنظیم مبدا</button>
         <button id="mode-destination" class="mode-btn" data-mode="destination">تنظیم مقصد</button>
       </div>
     </div>
+    <input id="job-name" type="text" class="job-name-input" placeholder="نام کار، مثلاً خانه تا شرکت" autocomplete="off">
     <div id="map"></div>
     <div class="route-labels">
       <div><span class="dot origin-dot"></span> مبدا: <span id="origin-label">—</span></div>
       <div><span class="dot destination-dot"></span> مقصد: <span id="destination-label">—</span></div>
     </div>
-    <button id="save-route" class="primary-btn">ذخیره مسیر</button>
+    <button id="save-job" class="primary-btn">افزودن کار</button>
     <span id="save-status" class="save-status"></span>
   </section>
 
   <section class="panel" id="chart-panel">
     <div class="panel-head">
-      <h2>نمودار قیمت</h2>
+      <h2>نمودار قیمت — <span id="chart-job-name">—</span></h2>
       <select id="range-select">
         <option value="6">۶ ساعت اخیر</option>
         <option value="24" selected>۲۴ ساعت اخیر</option>
@@ -42,11 +50,12 @@
       </select>
     </div>
     <div class="chart-wrap"><canvas id="price-chart"></canvas></div>
-    <p id="no-data-msg" class="no-data-msg" hidden>هنوز داده‌ای ثبت نشده — بعد از چند بار اجرای دوره‌ای (هر ۱۰ دقیقه) اینجا نمودار نشون داده می‌شه.</p>
+    <p id="no-data-msg" class="no-data-msg" hidden>هنوز داده‌ای ثبت نشده — بعد از چند بار اجرای دوره‌ای اینجا نمودار نشون داده می‌شه.</p>
+    <p id="no-job-msg" class="no-data-msg" hidden>هیچ کاری وجود نداره — یکی از پایین اضافه کن.</p>
   </section>
 
   <section class="panel" id="status-panel">
-    <h2>وضعیت دریافت</h2>
+    <h2>وضعیت دریافت — <span id="status-job-name">—</span></h2>
     <div id="status-list">در حال بارگذاری…</div>
   </section>
 
