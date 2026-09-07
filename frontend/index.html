@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tapnap — قیمت اسنپ و تپسی</title>
+<link rel="stylesheet" href="/vendor/leaflet.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>Tapnap</h1>
+  <p class="subtitle">قیمت لحظه‌ای اسنپ و تپسی، هر ۱۰ دقیقه</p>
+</header>
+
+<main>
+  <section class="panel" id="route-panel">
+    <div class="panel-head">
+      <h2>مسیر</h2>
+      <div class="mode-buttons">
+        <button id="mode-origin" class="mode-btn active" data-mode="origin">تنظیم مبدا</button>
+        <button id="mode-destination" class="mode-btn" data-mode="destination">تنظیم مقصد</button>
+      </div>
+    </div>
+    <div id="map"></div>
+    <div class="route-labels">
+      <div><span class="dot origin-dot"></span> مبدا: <span id="origin-label">—</span></div>
+      <div><span class="dot destination-dot"></span> مقصد: <span id="destination-label">—</span></div>
+    </div>
+    <button id="save-route" class="primary-btn">ذخیره مسیر</button>
+    <span id="save-status" class="save-status"></span>
+  </section>
+
+  <section class="panel" id="chart-panel">
+    <div class="panel-head">
+      <h2>نمودار قیمت</h2>
+      <select id="range-select">
+        <option value="6">۶ ساعت اخیر</option>
+        <option value="24" selected>۲۴ ساعت اخیر</option>
+        <option value="72">۳ روز اخیر</option>
+        <option value="168">۷ روز اخیر</option>
+      </select>
+    </div>
+    <div class="chart-wrap"><canvas id="price-chart"></canvas></div>
+    <p id="no-data-msg" class="no-data-msg" hidden>هنوز داده‌ای ثبت نشده — بعد از چند بار اجرای دوره‌ای (هر ۱۰ دقیقه) اینجا نمودار نشون داده می‌شه.</p>
+  </section>
+
+  <section class="panel" id="status-panel">
+    <h2>وضعیت دریافت</h2>
+    <div id="status-list">در حال بارگذاری…</div>
+  </section>
+
+  <section class="panel" id="admin-panel">
+    <h2>ورود مجدد اسنپ (ادمین)</h2>
+    <p class="admin-hint">فقط وقتی لازمه که توکن اسنپ کاملاً منقضی شده باشه. نیاز به رمز ادمین داره.</p>
+    <div class="admin-form">
+      <input id="admin-password" type="password" placeholder="رمز ادمین" autocomplete="off">
+      <input id="admin-cellphone" type="tel" placeholder="شماره موبایل، مثل ۰۹۱۲۱۲۳۴۵۶۷" autocomplete="off">
+      <button id="admin-send-otp" class="primary-btn">دریافت کد</button>
+    </div>
+    <div class="admin-form" id="admin-otp-row" hidden>
+      <input id="admin-otp" type="text" inputmode="numeric" placeholder="کد تایید پیامک‌شده" autocomplete="off">
+      <button id="admin-verify-otp" class="primary-btn">ورود</button>
+    </div>
+    <p id="admin-status" class="admin-status"></p>
+  </section>
+</main>
+
+<script src="/vendor/leaflet.js"></script>
+<script src="/vendor/chart.umd.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

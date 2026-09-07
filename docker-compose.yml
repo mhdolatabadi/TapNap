@@ -1,0 +1,15 @@
+services:
+  tapnap:
+    build: .
+    container_name: tapnap
+    restart: unless-stopped
+    environment:
+      - FETCH_INTERVAL_MINUTES=10
+    volumes:
+      - ./data:/app/data
+    networks:
+      - proxynet
+
+networks:
+  proxynet:
+    external: true

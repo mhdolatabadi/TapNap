@@ -1,2 +1,6 @@
 .idea
 
+data/*.db
+data/credentials.json
+__pycache__/
+*.pyc
