@@ -81,6 +81,24 @@ main {
   gap: 8px;
 }
 
+.icon-btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.icon-btn:hover { opacity: 0.9; }
+
 .mode-btn {
   background: transparent;
   border: 1px solid var(--border);

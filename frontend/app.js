@@ -46,14 +46,32 @@ function applyPointToMap(kind, point) {
 function initNewJobMap() {
   applyPointToMap("origin", DEFAULT_ORIGIN);
   applyPointToMap("destination", DEFAULT_DESTINATION);
+}
+
+const newJobPanel = document.getElementById("new-job-panel");
+
+function showNewJobPanel() {
+  newJobPanel.hidden = false;
+  // Leaflet can't size itself while its container is display:none --
+  // fix it up once the panel is actually visible.
+  map.invalidateSize();
   map.fitBounds(
     L.latLngBounds([
-      [DEFAULT_ORIGIN.lat, DEFAULT_ORIGIN.lng],
-      [DEFAULT_DESTINATION.lat, DEFAULT_DESTINATION.lng],
+      [state.newJobRoute.origin.lat, state.newJobRoute.origin.lng],
+      [state.newJobRoute.destination.lat, state.newJobRoute.destination.lng],
     ]),
     { padding: [40, 40] },
   );
 }
+
+function hideNewJobPanel() {
+  newJobPanel.hidden = true;
+}
+
+document.getElementById("new-job-toggle").addEventListener("click", () => {
+  if (newJobPanel.hidden) showNewJobPanel();
+  else hideNewJobPanel();
+});
 
 function setMode(mode) {
   state.mode = mode;
@@ -102,6 +120,7 @@ document.getElementById("save-job").addEventListener("click", async () => {
       statusEl.textContent = "اضافه شد ✓";
       document.getElementById("job-name").value = "";
       state.selectedJobId = job.id;
+      hideNewJobPanel();
       await loadJobs();
     } else {
       const err = await resp.json().catch(() => ({}));
