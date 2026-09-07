@@ -4,17 +4,18 @@ from datetime import datetime, timezone
 
 from . import config
 
-DEFAULT_CLIENT_ID = "default"
-
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS routes (
-    client_id TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
     origin_lat REAL NOT NULL,
     origin_lng REAL NOT NULL,
     origin_label TEXT,
     destination_lat REAL NOT NULL,
     destination_lng REAL NOT NULL,
     destination_label TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 
@@ -22,6 +23,7 @@ CREATE TABLE IF NOT EXISTS prices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     checked_at TEXT NOT NULL,
     provider TEXT NOT NULL,
+    job_id INTEGER,
     origin_lat REAL,
     origin_lng REAL,
     destination_lat REAL,
@@ -35,6 +37,7 @@ CREATE TABLE IF NOT EXISTS fetch_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     checked_at TEXT NOT NULL,
     provider TEXT NOT NULL,
+    job_id INTEGER,
     origin_lat REAL,
     origin_lng REAL,
     destination_lat REAL,
@@ -44,8 +47,14 @@ CREATE TABLE IF NOT EXISTS fetch_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_prices_checked_at ON prices (checked_at);
-CREATE INDEX IF NOT EXISTS idx_prices_route
-    ON prices (origin_lat, origin_lng, destination_lat, destination_lng);
+"""
+
+# Indexes on job_id are created separately, after the ALTER TABLE column
+# migration below runs -- job_id doesn't exist yet on a table that
+# predates it, and CREATE INDEX would fail before that column is added.
+INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_prices_job ON prices (job_id, checked_at);
+CREATE INDEX IF NOT EXISTS idx_fetch_log_job ON fetch_log (job_id);
 """
 
 
@@ -69,122 +78,193 @@ def init_db():
         # IF NOT EXISTS is a no-op on an existing table, so an older DB
         # needs them added explicitly.
         existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(fetch_log)")}
-        for col in ("origin_lat", "origin_lng", "destination_lat", "destination_lng"):
+        for col in ("origin_lat", "origin_lng", "destination_lat", "destination_lng", "job_id"):
             if col not in existing_cols:
-                conn.execute(f"ALTER TABLE fetch_log ADD COLUMN {col} REAL")
+                col_type = "INTEGER" if col == "job_id" else "REAL"
+                conn.execute(f"ALTER TABLE fetch_log ADD COLUMN {col} {col_type}")
 
-        # One-time migration off the old single-route-for-everyone table
-        # (every visitor used to see whoever saved last): move its row,
-        # if any, into the new per-client "default" bucket, then drop it.
+        price_cols = {row["name"] for row in conn.execute("PRAGMA table_info(prices)")}
+        if "job_id" not in price_cols:
+            conn.execute("ALTER TABLE prices ADD COLUMN job_id INTEGER")
+
+        conn.executescript(INDEXES)
+
+        # One-time migration off the very old single-route-for-everyone
+        # table (every visitor used to see whoever saved last): move its
+        # row, if any, straight into a job, then drop it.
         old = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='route'"
         ).fetchone()
         if old is not None:
             legacy = conn.execute("SELECT * FROM route WHERE id = 1").fetchone()
             if legacy is not None:
+                if legacy["origin_label"] and legacy["destination_label"]:
+                    name = f"{legacy['origin_label']} → {legacy['destination_label']}"
+                else:
+                    name = legacy["origin_label"] or legacy["destination_label"] or "Job 1"
                 conn.execute(
-                    """INSERT OR IGNORE INTO routes
-                       (client_id, origin_lat, origin_lng, origin_label,
-                        destination_lat, destination_lng, destination_label, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    """INSERT INTO jobs
+                       (name, origin_lat, origin_lng, origin_label,
+                        destination_lat, destination_lng, destination_label,
+                        active, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
                     (
-                        DEFAULT_CLIENT_ID,
+                        name,
                         legacy["origin_lat"], legacy["origin_lng"], legacy["origin_label"],
                         legacy["destination_lat"], legacy["destination_lng"], legacy["destination_label"],
-                        legacy["updated_at"],
+                        legacy["updated_at"], legacy["updated_at"],
                     ),
                 )
             conn.execute("DROP TABLE route")
 
-        row = conn.execute("SELECT 1 FROM routes WHERE client_id = ?", (DEFAULT_CLIENT_ID,)).fetchone()
+        # One-time migration off the per-client "routes" table (one route
+        # per browser, no name, no on/off state) to named, independently
+        # schedulable jobs. Each existing route becomes one job; existing
+        # prices/fetch_log rows are matched to their job by exact lat/lng
+        # and tagged with job_id so per-job history keeps working.
+        old_routes = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='routes'"
+        ).fetchone()
+        if old_routes is not None:
+            for i, r in enumerate(conn.execute("SELECT * FROM routes").fetchall(), start=1):
+                if r["origin_label"] and r["destination_label"]:
+                    name = f"{r['origin_label']} → {r['destination_label']}"
+                else:
+                    name = r["origin_label"] or r["destination_label"] or f"Job {i}"
+                cur = conn.execute(
+                    """INSERT INTO jobs
+                       (name, origin_lat, origin_lng, origin_label,
+                        destination_lat, destination_lng, destination_label,
+                        active, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                    (
+                        name,
+                        r["origin_lat"], r["origin_lng"], r["origin_label"],
+                        r["destination_lat"], r["destination_lng"], r["destination_label"],
+                        r["updated_at"], r["updated_at"],
+                    ),
+                )
+                job_id = cur.lastrowid
+                for table in ("prices", "fetch_log"):
+                    conn.execute(
+                        f"""UPDATE {table} SET job_id = ?
+                            WHERE job_id IS NULL AND origin_lat = ? AND origin_lng = ?
+                              AND destination_lat = ? AND destination_lng = ?""",
+                        (job_id, r["origin_lat"], r["origin_lng"], r["destination_lat"], r["destination_lng"]),
+                    )
+            conn.execute("DROP TABLE routes")
+
+        # Fresh install with no migrated data at all -- seed one default
+        # job so the app isn't empty out of the box.
+        row = conn.execute("SELECT 1 FROM jobs LIMIT 1").fetchone()
         if row is None:
+            now = datetime.now(timezone.utc).isoformat()
             conn.execute(
-                """INSERT INTO routes
-                   (client_id, origin_lat, origin_lng, origin_label,
-                    destination_lat, destination_lng, destination_label, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO jobs
+                   (name, origin_lat, origin_lng, origin_label,
+                    destination_lat, destination_lng, destination_label,
+                    active, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
                 (
-                    DEFAULT_CLIENT_ID,
+                    f"{config.DEFAULT_ORIGIN['label']} → {config.DEFAULT_DESTINATION['label']}",
                     config.DEFAULT_ORIGIN["lat"],
                     config.DEFAULT_ORIGIN["lng"],
                     config.DEFAULT_ORIGIN["label"],
                     config.DEFAULT_DESTINATION["lat"],
                     config.DEFAULT_DESTINATION["lng"],
                     config.DEFAULT_DESTINATION["label"],
-                    datetime.now(timezone.utc).isoformat(),
+                    now,
+                    now,
                 ),
             )
 
 
-def _row_to_route(row: sqlite3.Row) -> dict:
+def _row_to_job(row: sqlite3.Row) -> dict:
     return {
+        "id": row["id"],
+        "name": row["name"],
         "origin": {"lat": row["origin_lat"], "lng": row["origin_lng"], "label": row["origin_label"]},
         "destination": {
             "lat": row["destination_lat"],
             "lng": row["destination_lng"],
             "label": row["destination_label"],
         },
+        "active": bool(row["active"]),
+        "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
 
 
-def get_route(client_id: str) -> dict:
-    """Each browser gets its own saved route, keyed by a client_id it
-    generates itself (no accounts/login) -- falls back to the shared
-    "default" bucket for a client_id that hasn't saved one yet."""
+def create_job(name: str, origin: dict, destination: dict) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM routes WHERE client_id = ?", (client_id,)).fetchone()
-        if row is None:
-            row = conn.execute("SELECT * FROM routes WHERE client_id = ?", (DEFAULT_CLIENT_ID,)).fetchone()
-        return _row_to_route(row)
-
-
-def set_route(client_id: str, origin: dict, destination: dict):
-    with get_conn() as conn:
-        conn.execute(
-            """INSERT INTO routes
-                 (client_id, origin_lat, origin_lng, origin_label,
-                  destination_lat, destination_lng, destination_label, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(client_id) DO UPDATE SET
-                 origin_lat = excluded.origin_lat,
-                 origin_lng = excluded.origin_lng,
-                 origin_label = excluded.origin_label,
-                 destination_lat = excluded.destination_lat,
-                 destination_lng = excluded.destination_lng,
-                 destination_label = excluded.destination_label,
-                 updated_at = excluded.updated_at""",
+        cur = conn.execute(
+            """INSERT INTO jobs
+               (name, origin_lat, origin_lng, origin_label,
+                destination_lat, destination_lng, destination_label,
+                active, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
             (
-                client_id,
-                origin["lat"],
-                origin["lng"],
-                origin.get("label"),
-                destination["lat"],
-                destination["lng"],
-                destination.get("label"),
-                datetime.now(timezone.utc).isoformat(),
+                name,
+                origin["lat"], origin["lng"], origin.get("label"),
+                destination["lat"], destination["lng"], destination.get("label"),
+                now, now,
             ),
         )
+        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return _row_to_job(row)
 
 
-def get_all_routes() -> list[dict]:
-    """Every distinct saved route -- the scheduler polls prices for each
-    one, since there's no single "current" route anymore."""
+def get_jobs() -> list[dict]:
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM routes").fetchall()
-        return [_row_to_route(r) for r in rows]
+        rows = conn.execute("SELECT * FROM jobs ORDER BY id").fetchall()
+        return [_row_to_job(r) for r in rows]
 
 
-def insert_price(provider: str, origin: dict, destination: dict, service_name: str, price, raw_json: str):
+def get_job(job_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return _row_to_job(row) if row is not None else None
+
+
+def get_active_jobs() -> list[dict]:
+    """Only jobs the user has switched on -- the scheduler polls these,
+    an inactive job keeps its history but stops accumulating new rows."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM jobs WHERE active = 1 ORDER BY id").fetchall()
+        return [_row_to_job(r) for r in rows]
+
+
+def set_job_active(job_id: int, active: bool) -> dict | None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE jobs SET active = ?, updated_at = ? WHERE id = ?",
+            (1 if active else 0, datetime.now(timezone.utc).isoformat(), job_id),
+        )
+        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return _row_to_job(row) if row is not None else None
+
+
+def delete_job(job_id: int) -> bool:
+    """Drops the job itself; its price/fetch_log history is left in place
+    (job_id just points at nothing) rather than cascading the delete, so
+    old charts remain reconstructable from raw_json if ever needed."""
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        return cur.rowcount > 0
+
+
+def insert_price(provider: str, job_id: int, origin: dict, destination: dict, service_name: str, price, raw_json: str):
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO prices
-               (checked_at, provider, origin_lat, origin_lng, destination_lat, destination_lng,
+               (checked_at, provider, job_id, origin_lat, origin_lng, destination_lat, destination_lng,
                 service_name, price, raw_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 datetime.now(timezone.utc).isoformat(),
                 provider,
+                job_id,
                 origin["lat"],
                 origin["lng"],
                 destination["lat"],
@@ -196,15 +276,16 @@ def insert_price(provider: str, origin: dict, destination: dict, service_name: s
         )
 
 
-def log_fetch(provider: str, origin: dict, destination: dict, ok: bool, message: str = ""):
+def log_fetch(provider: str, job_id: int, origin: dict, destination: dict, ok: bool, message: str = ""):
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO fetch_log
-               (checked_at, provider, origin_lat, origin_lng, destination_lat, destination_lng, ok, message)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (checked_at, provider, job_id, origin_lat, origin_lng, destination_lat, destination_lng, ok, message)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 datetime.now(timezone.utc).isoformat(),
                 provider,
+                job_id,
                 origin["lat"],
                 origin["lng"],
                 destination["lat"],
@@ -215,38 +296,27 @@ def log_fetch(provider: str, origin: dict, destination: dict, ok: bool, message:
         )
 
 
-def get_prices(since_iso: str, origin: dict, destination: dict):
-    """Scoped to one exact origin/destination pair -- each saved route
-    builds its own independent price history rather than all routes
-    ever fetched being merged into one chart."""
+def get_prices(job_id: int, since_iso: str):
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT checked_at, provider, service_name, price
                FROM prices
-               WHERE checked_at >= ?
-                 AND origin_lat = ? AND origin_lng = ?
-                 AND destination_lat = ? AND destination_lng = ?
+               WHERE job_id = ? AND checked_at >= ?
                ORDER BY checked_at ASC""",
-            (since_iso, origin["lat"], origin["lng"], destination["lat"], destination["lng"]),
+            (job_id, since_iso),
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def get_last_fetch_status(origin: dict, destination: dict):
+def get_last_fetch_status(job_id: int):
+    """Latest fetch_log row per provider for this job -- used both for the
+    status panel and to decide whether the job is currently "running" or
+    has an "error" (see main.job_status)."""
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT provider, ok, message, checked_at FROM fetch_log
-               WHERE origin_lat = ? AND origin_lng = ?
-                 AND destination_lat = ? AND destination_lng = ?
-                 AND id IN (
-                   SELECT MAX(id) FROM fetch_log
-                   WHERE origin_lat = ? AND origin_lng = ?
-                     AND destination_lat = ? AND destination_lng = ?
-                   GROUP BY provider
-                 )""",
-            (
-                origin["lat"], origin["lng"], destination["lat"], destination["lng"],
-                origin["lat"], origin["lng"], destination["lat"], destination["lng"],
-            ),
+               WHERE job_id = ?
+                 AND id IN (SELECT MAX(id) FROM fetch_log WHERE job_id = ? GROUP BY provider)""",
+            (job_id, job_id),
         ).fetchall()
         return [dict(r) for r in rows]
