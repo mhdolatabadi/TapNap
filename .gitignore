@@ -1,4 +1,8 @@
 .idea
+.env
+data/
+__pycache__/
+*.pyc
 
 data/*.db
 data/credentials.json
