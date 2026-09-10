@@ -141,6 +141,15 @@ const STATUS_LABELS = {
   pending: "در انتظار اولین دریافت",
 };
 
+// Left-edge colour on each job card -- a quiet status cue that doesn't need
+// the reader to parse the badge text.
+const STATUS_COLORS = {
+  running: "#2ecc71",
+  error: "#ff5b5b",
+  pending: "#e8b341",
+  stopped: "#909aa8",
+};
+
 function jobRouteText(job) {
   const o = job.origin.label || `${job.origin.lat.toFixed(4)}, ${job.origin.lng.toFixed(4)}`;
   const d = job.destination.label || `${job.destination.lat.toFixed(4)}, ${job.destination.lng.toFixed(4)}`;
@@ -158,6 +167,7 @@ function renderJobs() {
     const card = document.createElement("div");
     card.className = "job-card" + (job.id === state.selectedJobId ? " selected" : "");
     card.dataset.jobId = job.id;
+    card.style.setProperty("--card-status", STATUS_COLORS[job.status] || "#2a303c");
 
     const info = document.createElement("div");
     info.className = "job-info";
@@ -211,14 +221,21 @@ async function loadJobs() {
   }
 
   renderJobs();
-  await Promise.all([loadChart(), loadTravelChart(), loadStatus()]);
+  await Promise.all([loadChart(), loadTravelChart(), loadByDayCharts(), loadStatus()]);
 }
 
 function selectJob(jobId) {
   state.selectedJobId = jobId;
   renderJobs();
+  resetAllZoom();
+  // Drop every chart up front so the switch never flashes the old job's data.
+  chart = destroyChart(chart);
+  travelChart = destroyChart(travelChart);
+  priceByDayChart = destroyChart(priceByDayChart);
+  travelByDayChart = destroyChart(travelByDayChart);
   loadChart();
   loadTravelChart();
+  loadByDayCharts();
   loadStatus();
 }
 
@@ -261,14 +278,58 @@ async function deleteJob(job) {
   }
 }
 
-// ---- chart ----
+// ---- charts ----
 
-const PALETTE = ["#4f8cff", "#2ecc71", "#ff5b5b", "#f5a623", "#a06bff", "#00c2c2"];
+const MODE_LABELS = { car: "ماشین", motorcycle: "موتور", bicycle: "دوچرخه" };
+const TICK_COLOR = "#909aa8";
+const GRID_COLOR = "#232833";
+
+// Provider identity colours (mirror the --snapp / --tapsi CSS tokens) plus
+// travel-mode colours kept off the provider hues. A series' colour is derived
+// from its label, not its position, so the same service is always the same
+// colour across refreshes and range changes.
+const SNAPP_COLOR = "#1fbf6b";
+const TAPSI_COLOR = "#ff6a3d";
+const MODE_COLORS = { "ماشین": "#6b8cc7", "موتور": "#b48ce0", "دوچرخه": "#57c8c8" };
+const PALETTE = ["#6b8cc7", "#b48ce0", "#57c8c8", "#e8b341", "#a06bff", "#00c2c2"];
+
+function colorForLabel(label, i) {
+  if (label.startsWith("اسنپ")) return SNAPP_COLOR;
+  if (label.startsWith("تپسی")) return TAPSI_COLOR;
+  if (MODE_COLORS[label]) return MODE_COLORS[label];
+  return PALETTE[i % PALETTE.length];
+}
+
+// Both providers expose several services (اسنپ / سفر اشتراکی / اکوپلاس …),
+// and they'd otherwise all be one flat provider colour. Keep the hue as the
+// provider's identity but lighten each extra service toward white and dash it,
+// so the primary service stays the solid brand line.
+function shade(hex, step) {
+  const amt = Math.min(0.55, step * 0.2);
+  const n = parseInt(hex.slice(1), 16);
+  const mix = (c) => Math.round(c + (255 - c) * amt);
+  return `rgb(${mix(n >> 16)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
+}
+
+function providerOf(label) {
+  if (label.startsWith("اسنپ")) return "snapp";
+  if (label.startsWith("تپسی")) return "tapsi";
+  return label;
+}
+
+// chartjs-plugin-zoom ships as a UMD global and doesn't self-register in that
+// build -- register it once so every chart below can opt into drag-to-zoom.
+if (window.ChartZoom) Chart.register(window.ChartZoom);
+
 let chart = null;
+let travelChart = null;
+let priceByDayChart = null;
+let travelByDayChart = null;
 
 // Render `config` into an existing chart in place when possible, so a periodic
-// refresh doesn't wipe the user's legend toggles (hidden series) or flash a
-// full redraw. Only rebuilds from scratch when there's no chart yet.
+// refresh doesn't wipe the user's legend toggles (hidden series), lose the
+// current drag-zoom window, or flash a full redraw. Rebuilds only when there's
+// no chart yet.
 function renderChart(existing, canvas, config) {
   if (!existing) return new Chart(canvas, config);
 
@@ -285,8 +346,91 @@ function renderChart(existing, canvas, config) {
 
   existing.data.labels = config.data.labels;
   existing.data.datasets = config.data.datasets;
+  // "none" keeps the plugin-zoom scale window intact across the refresh.
   existing.update("none");
   return existing;
+}
+
+// Tear a chart down so a canvas can't keep showing a previous job's data
+// while the next job's fetch is still in flight (or when it has no data).
+function destroyChart(existing) {
+  if (existing) existing.destroy();
+  return null;
+}
+
+// Shared options: dark ticks/grid + drag-to-zoom on the x axis. `group` links
+// charts that share an x axis so a drag on one zooms the whole group;
+// `resetBtnId` is the button revealed once that group is zoomed in.
+function chartOptions(group, resetBtnId, yTickCallback) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    // Hover anywhere along the x axis -- not only dead-on a point -- and show
+    // every series' value at that time in one tooltip.
+    interaction: { mode: "index", intersect: false, axis: "x" },
+    scales: {
+      y: { ticks: { color: TICK_COLOR, font: { family: "Vazirmatn" }, callback: yTickCallback }, grid: { color: GRID_COLOR } },
+      x: { ticks: { color: TICK_COLOR, font: { family: "Vazirmatn" }, maxRotation: 0, autoSkipPadding: 12 }, grid: { color: GRID_COLOR } },
+    },
+    plugins: {
+      legend: {
+        labels: {
+          color: "#eef1f5",
+          usePointStyle: true,
+          pointStyle: "line",
+          font: { family: "Vazirmatn" },
+        },
+      },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => {
+            const v = ctx.parsed.y;
+            if (v == null) return null;
+            const shown = yTickCallback
+              ? yTickCallback(Math.round(v))
+              : `${Math.round(v).toLocaleString("fa-IR")} تومان`;
+            return `${ctx.dataset.label}: ${shown}`;
+          },
+        },
+      },
+      zoom: {
+        zoom: {
+          drag: {
+            enabled: true,
+            backgroundColor: "rgba(238,241,245,0.12)",
+            borderColor: "rgba(238,241,245,0.45)",
+            borderWidth: 1,
+          },
+          mode: "x",
+          onZoomComplete: ({ chart: c }) => syncGroupZoom(group, c),
+        },
+      },
+    },
+  };
+}
+
+function lineDatasets(series) {
+  const ordByProvider = {};
+  return Array.from(series.entries()).map(([label, points], i) => {
+    const base = colorForLabel(label, i);
+    const prov = providerOf(label);
+    const ord = (ordByProvider[prov] = (ordByProvider[prov] ?? -1) + 1);
+    const color = ord === 0 ? base : shade(base, ord);
+    return {
+      label,
+      data: points,
+      borderColor: color,
+      backgroundColor: color,
+      borderWidth: 2,
+      borderDash: ord === 0 ? [] : [6, 3],
+      pointRadius: 2,
+      pointHoverRadius: 5,
+      pointHitRadius: 12,
+      spanGaps: true,
+      tension: 0.25,
+    };
+  });
 }
 
 function formatTime(iso) {
@@ -298,6 +442,38 @@ function selectedJob() {
   return state.jobs.find((j) => j.id === state.selectedJobId) || null;
 }
 
+// Turn a flat list of rows into aligned {labels, datasets}, one label per
+// distinct formatted timestamp and one dataset per series key.
+function timeSeries(rows, keyFn, valueFn) {
+  const labelsSet = new Set();
+  const series = new Map();
+  for (const row of rows) {
+    const label = formatTime(row.checked_at);
+    labelsSet.add(label);
+    const key = keyFn(row);
+    if (!series.has(key)) series.set(key, new Map());
+    series.get(key).set(label, valueFn(row));
+  }
+  const labels = Array.from(labelsSet);
+  const aligned = new Map();
+  for (const [key, points] of series) {
+    aligned.set(key, labels.map((l) => (points.has(l) ? points.get(l) : null)));
+  }
+  return { labels, datasets: lineDatasets(aligned) };
+}
+
+const currentHours = () => document.getElementById("range-select").value;
+
+async function fetchJson(url) {
+  try {
+    const resp = await fetch(url);
+    if (resp.ok) return await resp.json();
+  } catch {
+    /* transient -- next poll retries */
+  }
+  return null;
+}
+
 async function loadChart() {
   const job = selectedJob();
   const canvas = document.getElementById("price-chart");
@@ -306,10 +482,7 @@ async function loadChart() {
   document.getElementById("chart-job-name").textContent = job ? job.name : "—";
 
   if (!job) {
-    if (chart) {
-      chart.destroy();
-      chart = null;
-    }
+    chart = destroyChart(chart);
     canvas.hidden = true;
     noDataMsg.hidden = true;
     noJobMsg.hidden = false;
@@ -317,16 +490,11 @@ async function loadChart() {
   }
   noJobMsg.hidden = true;
 
-  const hours = document.getElementById("range-select").value;
-  let rows = [];
-  try {
-    const resp = await fetch(`/api/jobs/${job.id}/prices?hours=${hours}`);
-    if (resp.ok) rows = await resp.json();
-  } catch {
-    return;
-  }
+  const rows = await fetchJson(`/api/jobs/${job.id}/prices?hours=${currentHours()}`);
+  if (rows == null || job.id !== state.selectedJobId) return;
 
   if (rows.length === 0) {
+    chart = destroyChart(chart);
     noDataMsg.hidden = false;
     canvas.hidden = true;
     return;
@@ -334,63 +502,28 @@ async function loadChart() {
   noDataMsg.hidden = true;
   canvas.hidden = false;
 
-  const labelsSet = new Set();
-  const series = new Map();
-  for (const row of rows) {
-    const label = formatTime(row.checked_at);
-    labelsSet.add(label);
-    const key = `${row.provider} — ${row.service_name}`;
-    if (!series.has(key)) series.set(key, new Map());
-    series.get(key).set(label, row.price);
-  }
-
-  const labels = Array.from(labelsSet);
-  const datasets = Array.from(series.entries()).map(([key, points], i) => ({
-    label: key,
-    data: labels.map((l) => (points.has(l) ? points.get(l) : null)),
-    borderColor: PALETTE[i % PALETTE.length],
-    backgroundColor: PALETTE[i % PALETTE.length],
-    spanGaps: true,
-    tension: 0.25,
-  }));
+  const { labels, datasets } = timeSeries(
+    rows,
+    (r) => `${PROVIDER_LABELS[r.provider] || r.provider} — ${r.service_name}`,
+    (r) => r.price,
+  );
 
   chart = renderChart(chart, canvas, {
     type: "line",
     data: { labels, datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        y: { ticks: { color: "#9aa3b2" }, grid: { color: "#2a2f3a" } },
-        x: { ticks: { color: "#9aa3b2" }, grid: { color: "#2a2f3a" } },
-      },
-      plugins: { legend: { labels: { color: "#e8eaed" } } },
-    },
+    options: chartOptions("timeline", "price-chart-reset"),
   });
 }
-
-document.getElementById("range-select").addEventListener("change", () => {
-  loadChart();
-  loadTravelChart();
-});
-
-// ---- travel-time chart ----
-
-const MODE_LABELS = { car: "ماشین", motorcycle: "موتور", bicycle: "دوچرخه" };
-let travelChart = null;
 
 async function loadTravelChart() {
   const job = selectedJob();
   const canvas = document.getElementById("travel-chart");
   const noDataMsg = document.getElementById("travel-no-data-msg");
-  const noJobMsg = document.getElementById("travel-no-job-msg");
-  document.getElementById("travel-chart-job-name").textContent = job ? job.name : "—";
+  // The price and travel charts share one panel and one "no job" message.
+  const noJobMsg = document.getElementById("no-job-msg");
 
   if (!job) {
-    if (travelChart) {
-      travelChart.destroy();
-      travelChart = null;
-    }
+    travelChart = destroyChart(travelChart);
     canvas.hidden = true;
     noDataMsg.hidden = true;
     noJobMsg.hidden = false;
@@ -398,16 +531,11 @@ async function loadTravelChart() {
   }
   noJobMsg.hidden = true;
 
-  const hours = document.getElementById("range-select").value;
-  let rows = [];
-  try {
-    const resp = await fetch(`/api/jobs/${job.id}/travel-times?hours=${hours}`);
-    if (resp.ok) rows = await resp.json();
-  } catch {
-    return;
-  }
+  const rows = await fetchJson(`/api/jobs/${job.id}/travel-times?hours=${currentHours()}`);
+  if (rows == null || job.id !== state.selectedJobId) return;
 
   if (rows.length === 0) {
+    travelChart = destroyChart(travelChart);
     noDataMsg.hidden = false;
     canvas.hidden = true;
     return;
@@ -415,37 +543,221 @@ async function loadTravelChart() {
   noDataMsg.hidden = true;
   canvas.hidden = false;
 
-  const labelsSet = new Set();
-  const series = new Map();
-  for (const row of rows) {
-    const label = formatTime(row.checked_at);
-    labelsSet.add(label);
-    if (!series.has(row.mode)) series.set(row.mode, new Map());
-    series.get(row.mode).set(label, row.duration_seconds / 60);
-  }
-
-  const labels = Array.from(labelsSet);
-  const datasets = Array.from(series.entries()).map(([mode, points], i) => ({
-    label: MODE_LABELS[mode] || mode,
-    data: labels.map((l) => (points.has(l) ? points.get(l) : null)),
-    borderColor: PALETTE[i % PALETTE.length],
-    backgroundColor: PALETTE[i % PALETTE.length],
-    spanGaps: true,
-    tension: 0.25,
-  }));
+  const { labels, datasets } = timeSeries(
+    rows,
+    (r) => MODE_LABELS[r.mode] || r.mode,
+    (r) => r.duration_seconds / 60,
+  );
 
   travelChart = renderChart(travelChart, canvas, {
     type: "line",
     data: { labels, datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        y: { ticks: { color: "#9aa3b2", callback: (v) => `${v} دقیقه` }, grid: { color: "#2a2f3a" } },
-        x: { ticks: { color: "#9aa3b2" }, grid: { color: "#2a2f3a" } },
-      },
-      plugins: { legend: { labels: { color: "#e8eaed" } } },
-    },
+    options: chartOptions("timeline", "travel-chart-reset", (v) => `${v} دقیقه`),
+  });
+}
+
+// ---- day-over-day charts (value at a fixed time of day) ----
+
+const TOD_TOLERANCE_MIN = 90; // how far from the picked time a sample may be
+
+function todMinutes() {
+  const [h, m] = document.getElementById("tod-time").value.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+// For each calendar day in `rows`, keep -- per series -- the single sample
+// whose local clock time is closest to `targetMin` (within tolerance).
+function dailyAtTime(rows, keyFn, valueFn, targetMin) {
+  const days = new Map(); // dayKey -> { date, series: Map<key, {diff, value}> }
+  for (const row of rows) {
+    const d = new Date(row.checked_at);
+    const minute = d.getHours() * 60 + d.getMinutes();
+    let diff = Math.abs(minute - targetMin);
+    diff = Math.min(diff, 1440 - diff); // wrap around midnight
+    if (diff > TOD_TOLERANCE_MIN) continue;
+
+    const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (!days.has(dayKey)) days.set(dayKey, { date: d, series: new Map() });
+    const bucket = days.get(dayKey).series;
+    const key = keyFn(row);
+    const prev = bucket.get(key);
+    if (!prev || diff < prev.diff) bucket.set(key, { diff, value: valueFn(row) });
+  }
+
+  const dayKeys = Array.from(days.keys()).sort(
+    (a, b) => days.get(a).date - days.get(b).date,
+  );
+  const labels = dayKeys.map((k) =>
+    days.get(k).date.toLocaleDateString("fa-IR", { weekday: "long", day: "numeric", month: "short" }),
+  );
+
+  const seriesKeys = new Set();
+  for (const k of dayKeys) for (const s of days.get(k).series.keys()) seriesKeys.add(s);
+
+  const aligned = new Map();
+  for (const s of seriesKeys) {
+    aligned.set(
+      s,
+      dayKeys.map((k) => {
+        const hit = days.get(k).series.get(s);
+        return hit ? hit.value : null;
+      }),
+    );
+  }
+  return { labels, datasets: lineDatasets(aligned) };
+}
+
+async function loadByDayCharts() {
+  const job = selectedJob();
+  const noJobMsg = document.getElementById("by-day-no-job-msg");
+  document.getElementById("by-day-job-name").textContent = job ? job.name : "—";
+
+  const priceCanvas = document.getElementById("price-by-day-chart");
+  const travelCanvas = document.getElementById("travel-by-day-chart");
+  const priceNoData = document.getElementById("price-by-day-no-data");
+  const travelNoData = document.getElementById("travel-by-day-no-data");
+
+  if (!job) {
+    priceByDayChart = destroyChart(priceByDayChart);
+    travelByDayChart = destroyChart(travelByDayChart);
+    priceCanvas.hidden = true;
+    travelCanvas.hidden = true;
+    priceNoData.hidden = true;
+    travelNoData.hidden = true;
+    noJobMsg.hidden = false;
+    return;
+  }
+  noJobMsg.hidden = true;
+
+  const days = Number(document.getElementById("tod-days").value);
+  const targetMin = todMinutes();
+  const hours = days * 24;
+
+  const [priceRows, travelRows] = await Promise.all([
+    fetchJson(`/api/jobs/${job.id}/prices?hours=${hours}`),
+    fetchJson(`/api/jobs/${job.id}/travel-times?hours=${hours}`),
+  ]);
+  if (job.id !== state.selectedJobId) return;
+
+  if (priceRows != null) {
+    const { labels, datasets } = dailyAtTime(
+      priceRows,
+      (r) => `${PROVIDER_LABELS[r.provider] || r.provider} — ${r.service_name}`,
+      (r) => r.price,
+      targetMin,
+    );
+    if (labels.length === 0) {
+      priceByDayChart = destroyChart(priceByDayChart);
+      priceNoData.hidden = false;
+      priceCanvas.hidden = true;
+    } else {
+      priceNoData.hidden = true;
+      priceCanvas.hidden = false;
+      priceByDayChart = renderChart(priceByDayChart, priceCanvas, {
+        type: "line",
+        data: { labels, datasets },
+        options: chartOptions("daily", "price-by-day-reset"),
+      });
+    }
+  }
+
+  if (travelRows != null) {
+    const { labels, datasets } = dailyAtTime(
+      travelRows,
+      (r) => MODE_LABELS[r.mode] || r.mode,
+      (r) => r.duration_seconds / 60,
+      targetMin,
+    );
+    if (labels.length === 0) {
+      travelByDayChart = destroyChart(travelByDayChart);
+      travelNoData.hidden = false;
+      travelCanvas.hidden = true;
+    } else {
+      travelNoData.hidden = true;
+      travelCanvas.hidden = false;
+      travelByDayChart = renderChart(travelByDayChart, travelCanvas, {
+        type: "line",
+        data: { labels, datasets },
+        options: chartOptions("daily", "travel-by-day-reset", (v) => `${v} دقیقه`),
+      });
+    }
+  }
+}
+
+// ---- linked (grouped) zoom ----
+//
+// Charts in the same group share an x axis (the "timeline" pair covers the
+// same recent window; the "daily" pair covers the same span of days), so a
+// drag-zoom on any one of them applies the identical x window to the others.
+
+const ZOOM_GROUPS = {
+  timeline: { charts: () => [chart, travelChart], buttons: ["price-chart-reset", "travel-chart-reset"] },
+  daily: { charts: () => [priceByDayChart, travelByDayChart], buttons: ["price-by-day-reset", "travel-by-day-reset"] },
+};
+const BUTTON_GROUP = {
+  "price-chart-reset": "timeline",
+  "travel-chart-reset": "timeline",
+  "price-by-day-reset": "daily",
+  "travel-by-day-reset": "daily",
+};
+
+let syncingZoom = false;
+
+function setGroupResetButtons(group, zoomed) {
+  for (const id of ZOOM_GROUPS[group].buttons) document.getElementById(id).hidden = !zoomed;
+}
+
+// Copy `source`'s current x window onto its group-mates. Both charts in a
+// group are built from the same fetch cycle, so their category indices line
+// up and an index range transfers directly.
+function syncGroupZoom(group, source) {
+  const zoomed = source.isZoomedOrPanned();
+  setGroupResetButtons(group, zoomed);
+  if (syncingZoom) return;
+  syncingZoom = true;
+  try {
+    const { min, max } = source.scales.x;
+    for (const c of ZOOM_GROUPS[group].charts()) {
+      if (!c || c === source) continue;
+      if (zoomed) c.zoomScale("x", { min, max }, "none");
+      else c.resetZoom("none");
+    }
+  } finally {
+    syncingZoom = false;
+  }
+}
+
+function resetGroupZoom(group) {
+  syncingZoom = true;
+  try {
+    for (const c of ZOOM_GROUPS[group].charts()) if (c && c.isZoomedOrPanned()) c.resetZoom();
+  } finally {
+    syncingZoom = false;
+  }
+  setGroupResetButtons(group, false);
+}
+
+function wireZoomResets() {
+  for (const id of Object.keys(BUTTON_GROUP)) {
+    document.getElementById(id).addEventListener("click", () => resetGroupZoom(BUTTON_GROUP[id]));
+  }
+}
+
+function resetAllZoom() {
+  resetGroupZoom("timeline");
+  resetGroupZoom("daily");
+}
+
+document.getElementById("range-select").addEventListener("change", () => {
+  resetAllZoom();
+  loadChart();
+  loadTravelChart();
+});
+
+for (const id of ["tod-time", "tod-days"]) {
+  document.getElementById(id).addEventListener("change", () => {
+    resetAllZoom();
+    loadByDayCharts();
   });
 }
 
@@ -561,6 +873,7 @@ document.getElementById("admin-verify-otp").addEventListener("click", async () =
 
 (async function main() {
   initNewJobMap();
+  wireZoomResets();
   await loadJobs();
   setInterval(loadJobs, 30000);
 })();
