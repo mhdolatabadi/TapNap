@@ -27,7 +27,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="tapnap", lifespan=lifespan)
 
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+# Docker's COPY layout puts app/ and frontend/ side by side under /app, so
+# .parent.parent lands on "frontend" there -- but a local checkout has
+# app/ nested one level deeper (backend/app/) with frontend/ at the repo
+# root, so the documented "cd backend && uvicorn app.main:app" dev command
+# needs one more .parent to find it. Probe both rather than hardcoding one.
+_FRONTEND_DIR_CANDIDATES = [
+    Path(__file__).resolve().parent.parent / "frontend",  # Docker: /app/app -> /app/frontend
+    Path(__file__).resolve().parent.parent.parent / "frontend",  # local dev: backend/app -> repo root/frontend
+]
+FRONTEND_DIR = next((p for p in _FRONTEND_DIR_CANDIDATES if p.is_dir()), _FRONTEND_DIR_CANDIDATES[0])
 
 
 class Point(BaseModel):
@@ -132,6 +141,15 @@ def api_get_job_prices(job_id: int, hours: int = 24):
         raise HTTPException(400, "hours must be between 1 and 720")
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     return db.get_prices(job_id, since)
+
+
+@app.get("/api/jobs/{job_id}/travel-times")
+def api_get_job_travel_times(job_id: int, hours: int = 24):
+    _get_job_or_404(job_id)
+    if hours <= 0 or hours > 24 * 30:
+        raise HTTPException(400, "hours must be between 1 and 720")
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    return db.get_travel_times(job_id, since)
 
 
 @app.post("/api/fetch-now")

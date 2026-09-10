@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     environment:
       - FETCH_INTERVAL_MINUTES=10
+      - NESHAN_API_KEY=${NESHAN_API_KEY}
+      - NESHAN_TRAVEL_MODES=${NESHAN_TRAVEL_MODES:-car,motorcycle}
     volumes:
       - ./data:/app/data
     networks:

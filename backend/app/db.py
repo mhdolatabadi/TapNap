@@ -46,6 +46,20 @@ CREATE TABLE IF NOT EXISTS fetch_log (
     message TEXT
 );
 
+CREATE TABLE IF NOT EXISTS travel_times (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    checked_at TEXT NOT NULL,
+    job_id INTEGER,
+    mode TEXT NOT NULL,
+    origin_lat REAL,
+    origin_lng REAL,
+    destination_lat REAL,
+    destination_lng REAL,
+    duration_seconds INTEGER,
+    distance_meters INTEGER,
+    raw_json TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_prices_checked_at ON prices (checked_at);
 """
 
@@ -55,6 +69,7 @@ CREATE INDEX IF NOT EXISTS idx_prices_checked_at ON prices (checked_at);
 INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_prices_job ON prices (job_id, checked_at);
 CREATE INDEX IF NOT EXISTS idx_fetch_log_job ON fetch_log (job_id);
+CREATE INDEX IF NOT EXISTS idx_travel_times_job ON travel_times (job_id, checked_at);
 """
 
 
@@ -301,6 +316,42 @@ def get_prices(job_id: int, since_iso: str):
         rows = conn.execute(
             """SELECT checked_at, provider, service_name, price
                FROM prices
+               WHERE job_id = ? AND checked_at >= ?
+               ORDER BY checked_at ASC""",
+            (job_id, since_iso),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def insert_travel_time(
+    job_id: int, origin: dict, destination: dict, mode: str, duration_seconds: int, distance_meters, raw_json: str
+):
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO travel_times
+               (checked_at, job_id, mode, origin_lat, origin_lng, destination_lat, destination_lng,
+                duration_seconds, distance_meters, raw_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                datetime.now(timezone.utc).isoformat(),
+                job_id,
+                mode,
+                origin["lat"],
+                origin["lng"],
+                destination["lat"],
+                destination["lng"],
+                duration_seconds,
+                distance_meters,
+                raw_json,
+            ),
+        )
+
+
+def get_travel_times(job_id: int, since_iso: str):
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT checked_at, mode, duration_seconds, distance_meters
+               FROM travel_times
                WHERE job_id = ? AND checked_at >= ?
                ORDER BY checked_at ASC""",
             (job_id, since_iso),
