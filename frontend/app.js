@@ -211,13 +211,14 @@ async function loadJobs() {
   }
 
   renderJobs();
-  await Promise.all([loadChart(), loadStatus()]);
+  await Promise.all([loadChart(), loadTravelChart(), loadStatus()]);
 }
 
 function selectJob(jobId) {
   state.selectedJobId = jobId;
   renderJobs();
   loadChart();
+  loadTravelChart();
   loadStatus();
 }
 
@@ -346,9 +347,96 @@ async function loadChart() {
   });
 }
 
-document.getElementById("range-select").addEventListener("change", loadChart);
+document.getElementById("range-select").addEventListener("change", () => {
+  loadChart();
+  loadTravelChart();
+});
+
+// ---- travel-time chart ----
+
+const MODE_LABELS = { car: "ماشین", motorcycle: "موتور", bicycle: "دوچرخه" };
+let travelChart = null;
+
+async function loadTravelChart() {
+  const job = selectedJob();
+  const canvas = document.getElementById("travel-chart");
+  const noDataMsg = document.getElementById("travel-no-data-msg");
+  const noJobMsg = document.getElementById("travel-no-job-msg");
+  document.getElementById("travel-chart-job-name").textContent = job ? job.name : "—";
+
+  if (!job) {
+    if (travelChart) {
+      travelChart.destroy();
+      travelChart = null;
+    }
+    canvas.hidden = true;
+    noDataMsg.hidden = true;
+    noJobMsg.hidden = false;
+    return;
+  }
+  noJobMsg.hidden = true;
+
+  const hours = document.getElementById("range-select").value;
+  let rows = [];
+  try {
+    const resp = await fetch(`/api/jobs/${job.id}/travel-times?hours=${hours}`);
+    if (resp.ok) rows = await resp.json();
+  } catch {
+    return;
+  }
+
+  if (rows.length === 0) {
+    noDataMsg.hidden = false;
+    canvas.hidden = true;
+    return;
+  }
+  noDataMsg.hidden = true;
+  canvas.hidden = false;
+
+  const labelsSet = new Set();
+  const series = new Map();
+  for (const row of rows) {
+    const label = formatTime(row.checked_at);
+    labelsSet.add(label);
+    if (!series.has(row.mode)) series.set(row.mode, new Map());
+    series.get(row.mode).set(label, row.duration_seconds / 60);
+  }
+
+  const labels = Array.from(labelsSet);
+  const datasets = Array.from(series.entries()).map(([mode, points], i) => ({
+    label: MODE_LABELS[mode] || mode,
+    data: labels.map((l) => (points.has(l) ? points.get(l) : null)),
+    borderColor: PALETTE[i % PALETTE.length],
+    backgroundColor: PALETTE[i % PALETTE.length],
+    spanGaps: true,
+    tension: 0.25,
+  }));
+
+  if (travelChart) travelChart.destroy();
+  travelChart = new Chart(canvas, {
+    type: "line",
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: { ticks: { color: "#9aa3b2", callback: (v) => `${v} دقیقه` }, grid: { color: "#2a2f3a" } },
+        x: { ticks: { color: "#9aa3b2" }, grid: { color: "#2a2f3a" } },
+      },
+      plugins: { legend: { labels: { color: "#e8eaed" } } },
+    },
+  });
+}
 
 // ---- status ----
+
+const PROVIDER_LABELS = {
+  snapp: "اسنپ",
+  tapsi: "تپسی",
+  neshan_car: "نشان (ماشین)",
+  neshan_motorcycle: "نشان (موتور)",
+  neshan_bicycle: "نشان (دوچرخه)",
+};
 
 async function loadStatus() {
   const job = selectedJob();
@@ -373,7 +461,8 @@ async function loadStatus() {
       const row = document.createElement("div");
       row.className = "status-row";
       const time = formatTime(entry.checked_at);
-      row.innerHTML = `<span>${entry.provider}</span><span class="${entry.ok ? "status-ok" : "status-bad"}">${
+      const providerLabel = PROVIDER_LABELS[entry.provider] || entry.provider;
+      row.innerHTML = `<span>${providerLabel}</span><span class="${entry.ok ? "status-ok" : "status-bad"}">${
         entry.ok ? "OK" : "خطا"
       } · ${time}${entry.message ? " · " + entry.message : ""}</span>`;
       el.appendChild(row);
