@@ -139,6 +139,63 @@ header h1 {
   text-decoration: underline;
 }
 
+#admin-gate {
+  max-width: 380px;
+  margin: 48px auto;
+  text-align: center;
+}
+
+.inbox-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  margin-inline-start: 6px;
+}
+
+.inbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inbox-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-inline-start: 3px solid var(--warn);
+}
+
+.inbox-item-email {
+  font-weight: 700;
+}
+
+.inbox-item-time {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.inbox-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 40px 0;
+  margin: 0;
+}
+
 main {
   max-width: 1600px;
   margin: 0 auto;
