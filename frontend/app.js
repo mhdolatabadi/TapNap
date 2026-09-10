@@ -208,7 +208,25 @@ function renderJobsSummary() {
   el.textContent = `از ${snapshots.length.toLocaleString("fa-IR")} مسیر با قیمت لحظه‌ای — ارزون‌تر: ${parts.join(" · ")}`;
 }
 
+// A job in "error" state buried in a long list is easy to miss -- surface
+// it here so a systemic problem (an expired token affecting every job at
+// once) is visible without opening each job to find out.
+function renderJobsErrorBanner() {
+  const el = document.getElementById("jobs-error-banner");
+  const errored = state.jobs.filter((j) => j.status === "error");
+  if (!errored.length) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.textContent =
+    errored.length === 1
+      ? `«${errored[0].name}» با خطا مواجه شده — برای جزئیات، وضعیت دریافتش رو پایین صفحه ببین.`
+      : `${errored.length.toLocaleString("fa-IR")} کار با خطا مواجه شدن — برای جزئیات هرکدوم، وضعیت دریافتش رو پایین صفحه ببین.`;
+}
+
 function renderJobs() {
+  renderJobsErrorBanner();
   renderJobsSummary();
   const el = document.getElementById("jobs-list");
   if (!state.jobs.length) {

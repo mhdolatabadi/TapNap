@@ -423,6 +423,16 @@ input[type="time"] {
   margin-top: 2px;
 }
 
+.jobs-error-banner {
+  background: rgba(255, 91, 91, 0.12);
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+
 .jobs-summary {
   margin: -6px 0 10px;
   font-size: 12px;
