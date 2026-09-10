@@ -443,6 +443,8 @@ function destroyChart(existing) {
   return null;
 }
 
+const formatToman = (v) => `${Math.round(v).toLocaleString("fa-IR")} تومان`;
+
 // Shared options: dark ticks/grid + drag-to-zoom on the x axis. `group` links
 // charts that share an x axis so a drag on one zooms the whole group;
 // `resetBtnId` is the button revealed once that group is zoomed in.
@@ -596,7 +598,7 @@ async function loadChart() {
   chart = renderChart(chart, canvas, {
     type: "line",
     data: { labels, datasets },
-    options: chartOptions("timeline", "price-chart-reset"),
+    options: chartOptions("timeline", "price-chart-reset", formatToman),
   });
 }
 
@@ -741,7 +743,7 @@ async function loadByDayCharts() {
       priceByDayChart = renderChart(priceByDayChart, priceCanvas, {
         type: "line",
         data: { labels, datasets },
-        options: chartOptions("daily", "price-by-day-reset"),
+        options: chartOptions("daily", "price-by-day-reset", formatToman),
       });
     }
   }
