@@ -8,14 +8,29 @@
 }
 
 :root {
-  --bg: #0f1115;
-  --panel: #171a21;
-  --border: #2a2f3a;
-  --text: #e8eaed;
-  --muted: #9aa3b2;
-  --accent: #4f8cff;
+  --bg: #0f1218;
+  --surface: #161a22;
+  --surface-2: #1e232d;
+  --line: #2a303c;
+  --text: #eef1f5;
+  --muted: #909aa8;
+
+  /* Provider identity -- used everywhere a provider appears (now strip,
+     chart lines, dots) so a service always reads as the same colour. */
+  --snapp: #1fbf6b;
+  --tapsi: #ff6a3d;
+  --neutral: #6b8cc7; /* travel-time series, kept off the provider hues */
+
+  --warn: #e8b341;
+  --danger: #ff5b5b;
+  --ok: #2ecc71;
+  --focus: #7cc4ff;
+
+  /* Map pins are origin/destination, a different axis from provider colour. */
   --origin: #2ecc71;
   --destination: #ff5b5b;
+
+  --radius: 10px;
   font-family: "Vazirmatn", Tahoma, "Segoe UI", sans-serif;
 }
 
@@ -26,37 +41,78 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation: none !important;
+  }
+}
+
+/* ---- top bar ---- */
+
 header {
-  padding: 24px 20px 8px;
-  text-align: center;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 14px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
 }
 
 header h1 {
   margin: 0;
-  font-size: 28px;
-  letter-spacing: 1px;
+  font-size: 19px;
+  font-weight: 800;
 }
 
 .subtitle {
+  margin: 0;
   color: var(--muted);
-  margin: 4px 0 0;
+  font-size: 13px;
 }
 
 main {
-  max-width: 900px;
+  max-width: 1600px;
   margin: 0 auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
+  padding: 20px 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  align-items: start;
+}
+
+.panel.span-all { grid-column: 1 / -1; }
+
+/* Two charts sharing one panel (the timeline pair; the day-over-day pair) */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 24px;
+}
+
+/* One tile / one chart per row on narrow screens (phones, split windows) */
+@media (max-width: 820px) {
+  main,
+  .chart-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   padding: 16px;
 }
 
@@ -64,17 +120,20 @@ main {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.panel-head h2 {
+.panel-head h2,
+.panel > h2 {
   margin: 0;
-  font-size: 16px;
-  color: var(--muted);
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
 }
+
+.panel > h2 { margin-bottom: 12px; }
 
 .mode-buttons {
   display: flex;
@@ -82,14 +141,14 @@ main {
 }
 
 .icon-btn {
-  background: var(--accent);
-  color: white;
+  background: var(--text);
+  color: var(--bg);
   border: none;
   width: 30px;
   height: 30px;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -97,22 +156,24 @@ main {
   padding: 0;
 }
 
-.icon-btn:hover { opacity: 0.9; }
+.icon-btn:hover { background: #fff; }
 
 .mode-btn {
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   color: var(--text);
   padding: 6px 12px;
   border-radius: 8px;
   cursor: pointer;
+  font: inherit;
   font-size: 13px;
 }
 
 .mode-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: white;
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+  font-weight: 700;
 }
 
 #map {
@@ -143,16 +204,18 @@ main {
 
 .primary-btn {
   margin-top: 12px;
-  background: var(--accent);
-  color: white;
+  background: var(--text);
+  color: var(--bg);
   border: none;
-  padding: 10px 18px;
+  padding: 9px 18px;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.primary-btn:hover { opacity: 0.9; }
+.primary-btn:hover { background: #fff; }
 
 .save-status {
   margin-inline-start: 10px;
@@ -165,11 +228,13 @@ select, canvas {
 }
 
 select {
-  background: var(--bg);
+  background: var(--surface-2);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 4px 8px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 13px;
 }
 
 .chart-wrap {
@@ -178,7 +243,20 @@ select {
   height: 320px;
 }
 
-#price-chart {
+/* Each chart cell stretches to match its row-mate; let the canvas area take
+   up the slack instead of leaving dead space under the chart. */
+.chart-cell {
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-cell .chart-wrap {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 300px;
+}
+
+.chart-wrap > canvas {
   /* No fixed size here -- Chart.js sets this canvas's inline style
      itself (responsive: true) based on .chart-wrap's height above.
      Fixing the height directly on the canvas instead of the wrapper
@@ -187,6 +265,64 @@ select {
      chart every tick. display:block avoids the few extra px of
      inline-baseline gap under the canvas. */
   display: block;
+}
+
+.head-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.reset-zoom-btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.reset-zoom-btn:hover { border-color: var(--muted); }
+
+.chart-hint {
+  margin: -6px 0 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tod-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+input[type="time"] {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-family: inherit;
+}
+
+.sub-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 18px 0 8px;
+  gap: 8px;
+}
+
+.sub-h {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
 }
 
 .no-data-msg {
@@ -207,17 +343,17 @@ select {
   justify-content: space-between;
   padding: 6px 10px;
   border-radius: 8px;
-  background: rgba(255,255,255,0.03);
+  background: var(--surface-2);
 }
 
-.status-ok { color: var(--origin); }
-.status-bad { color: var(--destination); }
+.status-ok { color: var(--ok); }
+.status-bad { color: var(--danger); }
 
 .job-name-input {
   width: 100%;
-  background: var(--bg);
+  background: var(--surface-2);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px 10px;
   font-family: inherit;
@@ -238,13 +374,15 @@ select {
   flex-wrap: wrap;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-inline-start: 3px solid var(--card-status, var(--line));
 }
 
 .job-card.selected {
-  border-color: var(--accent);
+  background: color-mix(in srgb, var(--text) 6%, var(--surface-2));
+  border-inline-start-color: var(--card-status, var(--text));
 }
 
 .job-info {
@@ -254,7 +392,7 @@ select {
 }
 
 .job-name {
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .job-route {
@@ -272,19 +410,20 @@ select {
 
 .job-btn {
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   color: var(--text);
   padding: 5px 10px;
   border-radius: 8px;
   cursor: pointer;
+  font: inherit;
   font-size: 12px;
 }
 
-.job-btn:hover { opacity: 0.85; }
+.job-btn:hover { border-color: var(--muted); }
 
 .job-btn-danger {
-  border-color: var(--destination);
-  color: var(--destination);
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  color: var(--danger);
 }
 
 .status-badge {
@@ -294,10 +433,10 @@ select {
   white-space: nowrap;
 }
 
-.status-badge.status-running { background: rgba(46, 204, 113, 0.15); color: var(--origin); }
-.status-badge.status-stopped { background: rgba(154, 163, 178, 0.15); color: var(--muted); }
-.status-badge.status-error { background: rgba(255, 91, 91, 0.15); color: var(--destination); }
-.status-badge.status-pending { background: rgba(245, 166, 35, 0.15); color: #f5a623; }
+.status-badge.status-running { background: rgba(46, 204, 113, 0.15); color: var(--ok); }
+.status-badge.status-stopped { background: rgba(144, 154, 168, 0.15); color: var(--muted); }
+.status-badge.status-error { background: rgba(255, 91, 91, 0.15); color: var(--danger); }
+.status-badge.status-pending { background: rgba(232, 179, 65, 0.15); color: var(--warn); }
 
 .marker-pin {
   border-radius: 50%;

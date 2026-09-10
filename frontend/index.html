@@ -14,7 +14,7 @@
 </header>
 
 <main>
-  <section class="panel" id="jobs-panel">
+  <section class="panel span-all" id="jobs-panel">
     <div class="panel-head">
       <h2>کارهای پایش قیمت</h2>
       <button id="new-job-toggle" class="icon-btn" title="کار جدید" aria-label="کار جدید">+</button>
@@ -22,7 +22,7 @@
     <div id="jobs-list">در حال بارگذاری…</div>
   </section>
 
-  <section class="panel" id="new-job-panel" hidden>
+  <section class="panel span-all" id="new-job-panel" hidden>
     <div class="panel-head">
       <h2>کار جدید</h2>
       <div class="mode-buttons">
@@ -40,28 +40,80 @@
     <span id="save-status" class="save-status"></span>
   </section>
 
-  <section class="panel" id="chart-panel">
+  <section class="panel span-all" id="timeline-panel">
     <div class="panel-head">
-      <h2>نمودار قیمت — <span id="chart-job-name">—</span></h2>
-      <select id="range-select">
-        <option value="6">۶ ساعت اخیر</option>
-        <option value="24" selected>۲۴ ساعت اخیر</option>
-        <option value="72">۳ روز اخیر</option>
-        <option value="168">۷ روز اخیر</option>
-      </select>
+      <h2>نمودار لحظه‌ای — <span id="chart-job-name">—</span></h2>
+      <div class="head-controls">
+        <select id="range-select">
+          <option value="6">۶ ساعت اخیر</option>
+          <option value="24" selected>۲۴ ساعت اخیر</option>
+          <option value="72">۳ روز اخیر</option>
+          <option value="168">۷ روز اخیر</option>
+        </select>
+      </div>
     </div>
-    <div class="chart-wrap"><canvas id="price-chart"></canvas></div>
-    <p id="no-data-msg" class="no-data-msg" hidden>هنوز داده‌ای ثبت نشده — بعد از چند بار اجرای دوره‌ای اینجا نمودار نشون داده می‌شه.</p>
+
+    <p class="chart-hint">برای بزرگ‌نمایی، روی بازه‌ای از نمودار بکشید — هر دو نمودار با هم بزرگ می‌شن.</p>
+
+    <div class="chart-grid">
+      <div class="chart-cell">
+        <div class="sub-head">
+          <h3 class="sub-h">قیمت</h3>
+          <button id="price-chart-reset" class="reset-zoom-btn" hidden>بازنشانی بزرگ‌نمایی</button>
+        </div>
+        <div class="chart-wrap"><canvas id="price-chart"></canvas></div>
+        <p id="no-data-msg" class="no-data-msg" hidden>هنوز داده‌ای برای قیمت ثبت نشده.</p>
+      </div>
+
+      <div class="chart-cell">
+        <div class="sub-head">
+          <h3 class="sub-h">زمان مسیر</h3>
+          <button id="travel-chart-reset" class="reset-zoom-btn" hidden>بازنشانی بزرگ‌نمایی</button>
+        </div>
+        <div class="chart-wrap"><canvas id="travel-chart"></canvas></div>
+        <p id="travel-no-data-msg" class="no-data-msg" hidden>هنوز داده‌ای برای زمان مسیر ثبت نشده.</p>
+      </div>
+    </div>
+
     <p id="no-job-msg" class="no-data-msg" hidden>هیچ کاری وجود نداره — یکی از پایین اضافه کن.</p>
   </section>
 
-  <section class="panel" id="travel-chart-panel">
+  <section class="panel span-all" id="by-day-panel">
     <div class="panel-head">
-      <h2>زمان مسیر — <span id="travel-chart-job-name">—</span></h2>
+      <h2>مقایسه روزبه‌روز در ساعت مشخص — <span id="by-day-job-name">—</span></h2>
+      <div class="head-controls">
+        <label class="tod-label">ساعت
+          <input id="tod-time" type="time" value="22:00" step="60">
+        </label>
+        <select id="tod-days">
+          <option value="7">۷ روز</option>
+          <option value="14" selected>۱۴ روز</option>
+          <option value="30">۳۰ روز</option>
+        </select>
+      </div>
     </div>
-    <div class="chart-wrap"><canvas id="travel-chart"></canvas></div>
-    <p id="travel-no-data-msg" class="no-data-msg" hidden>هنوز داده‌ای ثبت نشده — بعد از چند بار اجرای دوره‌ای اینجا نمودار نشون داده می‌شه.</p>
-    <p id="travel-no-job-msg" class="no-data-msg" hidden>هیچ کاری وجود نداره — یکی از پایین اضافه کن.</p>
+
+    <div class="chart-grid">
+      <div class="chart-cell">
+        <div class="sub-head">
+          <h3 class="sub-h">قیمت</h3>
+          <button id="price-by-day-reset" class="reset-zoom-btn" hidden>بازنشانی بزرگ‌نمایی</button>
+        </div>
+        <div class="chart-wrap"><canvas id="price-by-day-chart"></canvas></div>
+        <p id="price-by-day-no-data" class="no-data-msg" hidden>برای این بازه و ساعت داده‌ای پیدا نشد.</p>
+      </div>
+
+      <div class="chart-cell">
+        <div class="sub-head">
+          <h3 class="sub-h">زمان مسیر</h3>
+          <button id="travel-by-day-reset" class="reset-zoom-btn" hidden>بازنشانی بزرگ‌نمایی</button>
+        </div>
+        <div class="chart-wrap"><canvas id="travel-by-day-chart"></canvas></div>
+        <p id="travel-by-day-no-data" class="no-data-msg" hidden>برای این بازه و ساعت داده‌ای پیدا نشد.</p>
+      </div>
+    </div>
+
+    <p id="by-day-no-job-msg" class="no-data-msg" hidden>هیچ کاری وجود نداره — یکی از پایین اضافه کن.</p>
   </section>
 
   <section class="panel" id="status-panel">
@@ -72,6 +124,7 @@
 
 <script src="/vendor/leaflet.js"></script>
 <script src="/vendor/chart.umd.min.js"></script>
+<script src="/vendor/chartjs-plugin-zoom.min.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
