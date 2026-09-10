@@ -202,8 +202,21 @@ main {
 .origin-dot { background: var(--origin); }
 .destination-dot { background: var(--destination); }
 
-.primary-btn {
+.new-job-hint {
+  margin: -6px 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
   margin-top: 12px;
+}
+
+.primary-btn {
   background: var(--text);
   color: var(--bg);
   border: none;
@@ -218,7 +231,6 @@ main {
 .primary-btn:hover { background: #fff; }
 
 .save-status {
-  margin-inline-start: 10px;
   font-size: 13px;
   color: var(--muted);
 }

@@ -73,6 +73,12 @@ document.getElementById("new-job-toggle").addEventListener("click", () => {
   else hideNewJobPanel();
 });
 
+document.getElementById("cancel-job").addEventListener("click", () => {
+  document.getElementById("job-name").value = "";
+  document.getElementById("save-status").textContent = "";
+  hideNewJobPanel();
+});
+
 function setMode(mode) {
   state.mode = mode;
   document.querySelectorAll(".mode-btn").forEach((btn) => {

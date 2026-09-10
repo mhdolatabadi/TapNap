@@ -31,13 +31,17 @@
       </div>
     </div>
     <input id="job-name" type="text" class="job-name-input" placeholder="نام کار، مثلاً خانه تا شرکت" autocomplete="off">
+    <p class="new-job-hint">روی نقشه کلیک کن یا مارکر رو بکش تا مبدا/مقصد انتخاب‌شده رو تنظیم کنی.</p>
     <div id="map"></div>
     <div class="route-labels">
       <div><span class="dot origin-dot"></span> مبدا: <span id="origin-label">—</span></div>
       <div><span class="dot destination-dot"></span> مقصد: <span id="destination-label">—</span></div>
     </div>
-    <button id="save-job" class="primary-btn">افزودن کار</button>
-    <span id="save-status" class="save-status"></span>
+    <div class="form-actions">
+      <button id="save-job" class="primary-btn">افزودن کار</button>
+      <button id="cancel-job" class="job-btn">لغو</button>
+      <span id="save-status" class="save-status"></span>
+    </div>
   </section>
 
   <section class="panel span-all" id="timeline-panel">
