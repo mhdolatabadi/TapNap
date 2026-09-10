@@ -11,10 +11,31 @@
 <header>
   <h1>Tapnap</h1>
   <p class="subtitle">قیمت لحظه‌ای اسنپ و تپسی، برای چند مسیر همزمان</p>
+  <div id="account-bar" class="account-bar" hidden>
+    <span id="account-email"></span>
+    <button id="logout-btn" class="job-btn">خروج</button>
+  </div>
 </header>
 
 <main>
-  <section class="panel span-all" id="jobs-panel">
+  <section class="panel span-all" id="auth-panel" hidden>
+    <h2>ورود</h2>
+    <form id="login-form" class="auth-form">
+      <input id="login-email" type="email" placeholder="ایمیل" autocomplete="username" required>
+      <input id="login-password" type="password" placeholder="رمز عبور" autocomplete="current-password" required>
+      <button type="submit" class="primary-btn">ورود</button>
+    </form>
+    <form id="signup-form" class="auth-form" hidden>
+      <input id="signup-email" type="email" placeholder="ایمیل" autocomplete="username" required>
+      <input id="signup-password" type="password" placeholder="رمز عبور (حداقل ۸ کاراکتر)" autocomplete="new-password" required>
+      <button type="submit" class="primary-btn">ثبت‌نام</button>
+    </form>
+    <p id="auth-status" class="save-status"></p>
+    <p id="show-signup-wrap" class="auth-switch">حساب نداری؟ <button id="show-signup" class="link-btn" type="button">ثبت‌نام کن</button></p>
+    <p id="show-login-wrap" class="auth-switch" hidden>قبلاً ثبت‌نام کردی؟ <button id="show-login" class="link-btn" type="button">وارد شو</button></p>
+  </section>
+
+  <section class="panel span-all" id="jobs-panel" data-app-section>
     <div class="panel-head">
       <h2>کارهای پایش قیمت</h2>
       <button id="new-job-toggle" class="icon-btn" title="کار جدید" aria-label="کار جدید">+</button>
@@ -46,7 +67,7 @@
     </div>
   </section>
 
-  <section class="panel span-all" id="timeline-panel">
+  <section class="panel span-all" id="timeline-panel" data-app-section>
     <div class="panel-head">
       <h2>نمودار لحظه‌ای — <span id="chart-job-name">—</span></h2>
       <div class="head-controls">
@@ -84,7 +105,7 @@
     <p id="no-job-msg" class="no-data-msg" hidden>هیچ کاری وجود نداره — یکی از پایین اضافه کن.</p>
   </section>
 
-  <section class="panel span-all" id="by-day-panel">
+  <section class="panel span-all" id="by-day-panel" data-app-section>
     <div class="panel-head">
       <h2>مقایسه روزبه‌روز در ساعت مشخص — <span id="by-day-job-name">—</span></h2>
       <div class="head-controls">
@@ -123,7 +144,7 @@
     <p id="by-day-no-job-msg" class="no-data-msg" hidden>هیچ کاری وجود نداره — یکی از پایین اضافه کن.</p>
   </section>
 
-  <section class="panel span-all" id="status-panel">
+  <section class="panel span-all" id="status-panel" data-app-section>
     <h2>وضعیت دریافت — <span id="status-job-name">—</span></h2>
     <div id="status-list">در حال بارگذاری…</div>
   </section>

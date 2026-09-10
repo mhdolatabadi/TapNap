@@ -225,9 +225,19 @@ function renderJobsErrorBanner() {
       : `${errored.length.toLocaleString("fa-IR")} کار با خطا مواجه شدن — برای جزئیات هرکدوم، وضعیت دریافتش رو پایین صفحه ببین.`;
 }
 
+const MAX_JOBS_PER_USER = 3;
+
+function updateNewJobToggle() {
+  const btn = document.getElementById("new-job-toggle");
+  const atLimit = state.jobs.length >= MAX_JOBS_PER_USER;
+  btn.disabled = atLimit;
+  btn.title = atLimit ? "هر حساب حداکثر ۳ مسیر می‌تونه داشته باشه" : "کار جدید";
+}
+
 function renderJobs() {
   renderJobsErrorBanner();
   renderJobsSummary();
+  updateNewJobToggle();
   const el = document.getElementById("jobs-list");
   if (!state.jobs.length) {
     el.textContent = "هنوز هیچ کاری تعریف نشده.";
@@ -916,9 +926,122 @@ async function loadStatus() {
   }
 }
 
+// ---- auth ----
+
+function setAppVisible(visible) {
+  document.querySelectorAll("[data-app-section]").forEach((el) => {
+    el.hidden = !visible;
+  });
+}
+
+function showAuthGate() {
+  setAppVisible(false);
+  document.getElementById("auth-panel").hidden = false;
+  document.getElementById("account-bar").hidden = true;
+}
+
+function showApp(email) {
+  document.getElementById("auth-panel").hidden = true;
+  setAppVisible(true);
+  document.getElementById("account-bar").hidden = false;
+  document.getElementById("account-email").textContent = email;
+}
+
+async function checkAuth() {
+  try {
+    const resp = await fetch("/api/auth/me");
+    if (resp.ok) return await resp.json();
+  } catch {
+    /* treated as logged out below */
+  }
+  return null;
+}
+
+let pollTimer = null;
+async function startApp() {
+  await loadJobs();
+  if (!pollTimer) pollTimer = setInterval(loadJobs, 30000);
+}
+
+document.getElementById("show-signup").addEventListener("click", () => {
+  document.getElementById("login-form").hidden = true;
+  document.getElementById("signup-form").hidden = false;
+  document.getElementById("show-signup-wrap").hidden = true;
+  document.getElementById("show-login-wrap").hidden = false;
+  document.getElementById("auth-status").textContent = "";
+});
+
+document.getElementById("show-login").addEventListener("click", () => {
+  document.getElementById("signup-form").hidden = true;
+  document.getElementById("login-form").hidden = false;
+  document.getElementById("show-login-wrap").hidden = true;
+  document.getElementById("show-signup-wrap").hidden = false;
+  document.getElementById("auth-status").textContent = "";
+});
+
+document.getElementById("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("auth-status");
+  const email = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+  statusEl.textContent = "در حال ورود…";
+  try {
+    const resp = await apiFetch("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok) {
+      statusEl.textContent = "";
+      showApp(data.email);
+      await startApp();
+    } else {
+      statusEl.textContent = data.detail || "خطا در ورود.";
+    }
+  } catch {
+    statusEl.textContent = "سرور در دسترس نیست.";
+  }
+});
+
+document.getElementById("signup-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("auth-status");
+  const email = document.getElementById("signup-email").value.trim();
+  const password = document.getElementById("signup-password").value;
+  statusEl.textContent = "در حال ثبت‌نام…";
+  try {
+    const resp = await apiFetch("/api/auth/signup", { method: "POST", body: JSON.stringify({ email, password }) });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok) {
+      if (data.approved) {
+        statusEl.textContent = "";
+        showApp(data.email);
+        await startApp();
+      } else {
+        statusEl.textContent = "ثبت‌نام انجام شد — حساب شما در انتظار تایید مدیره.";
+      }
+    } else {
+      statusEl.textContent = data.detail || "خطا در ثبت‌نام.";
+    }
+  } catch {
+    statusEl.textContent = "سرور در دسترس نیست.";
+  }
+});
+
+document.getElementById("logout-btn").addEventListener("click", async () => {
+  try {
+    await apiFetch("/api/auth/logout", { method: "POST" });
+  } catch {
+    /* best-effort -- reload either way */
+  }
+  location.reload();
+});
+
 (async function main() {
   initNewJobMap();
   wireZoomResets();
-  await loadJobs();
-  setInterval(loadJobs, 30000);
+  const me = await checkAuth();
+  if (me) {
+    showApp(me.email);
+    await startApp();
+  } else {
+    showAuthGate();
+  }
 })();

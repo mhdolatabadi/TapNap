@@ -1,3 +1,4 @@
+import secrets
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -17,6 +18,24 @@ CREATE TABLE IF NOT EXISTS jobs (
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    -- The first account ever created is auto-approved (there's no admin yet
+    -- to approve them) and becomes the owner of every job that existed
+    -- before accounts did -- see create_user(). Everyone after that starts
+    -- unapproved until an admin approves them (see approve_user()).
+    approved INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS prices (
@@ -70,6 +89,8 @@ INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_prices_job ON prices (job_id, checked_at);
 CREATE INDEX IF NOT EXISTS idx_fetch_log_job ON fetch_log (job_id);
 CREATE INDEX IF NOT EXISTS idx_travel_times_job ON travel_times (job_id, checked_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs (user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
 """
 
 
@@ -101,6 +122,12 @@ def init_db():
         price_cols = {row["name"] for row in conn.execute("PRAGMA table_info(prices)")}
         if "job_id" not in price_cols:
             conn.execute("ALTER TABLE prices ADD COLUMN job_id INTEGER")
+
+        job_cols = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
+        if "user_id" not in job_cols:
+            # NULL here means "predates accounts" -- create_user() assigns
+            # every such job to the first account ever created.
+            conn.execute("ALTER TABLE jobs ADD COLUMN user_id INTEGER")
 
         conn.executescript(INDEXES)
 
@@ -210,17 +237,20 @@ def _row_to_job(row: sqlite3.Row) -> dict:
     }
 
 
-def create_job(name: str, origin: dict, destination: dict) -> dict:
+MAX_JOBS_PER_USER = 3
+
+
+def create_job(user_id: int, name: str, origin: dict, destination: dict) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO jobs
-               (name, origin_lat, origin_lng, origin_label,
+               (user_id, name, origin_lat, origin_lng, origin_label,
                 destination_lat, destination_lng, destination_label,
                 active, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
             (
-                name,
+                user_id, name,
                 origin["lat"], origin["lng"], origin.get("label"),
                 destination["lat"], destination["lng"], destination.get("label"),
                 now, now,
@@ -230,42 +260,48 @@ def create_job(name: str, origin: dict, destination: dict) -> dict:
         return _row_to_job(row)
 
 
-def get_jobs() -> list[dict]:
+def count_jobs_for_user(user_id: int) -> int:
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM jobs ORDER BY id").fetchall()
+        return conn.execute("SELECT COUNT(*) AS n FROM jobs WHERE user_id = ?", (user_id,)).fetchone()["n"]
+
+
+def get_jobs(user_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM jobs WHERE user_id = ? ORDER BY id", (user_id,)).fetchall()
         return [_row_to_job(r) for r in rows]
 
 
-def get_job(job_id: int) -> dict | None:
+def get_job(job_id: int, user_id: int) -> dict | None:
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
         return _row_to_job(row) if row is not None else None
 
 
 def get_active_jobs() -> list[dict]:
-    """Only jobs the user has switched on -- the scheduler polls these,
-    an inactive job keeps its history but stops accumulating new rows."""
+    """Every switched-on job across every account -- the scheduler polls
+    these regardless of owner; an inactive job keeps its history but stops
+    accumulating new rows."""
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM jobs WHERE active = 1 ORDER BY id").fetchall()
         return [_row_to_job(r) for r in rows]
 
 
-def set_job_active(job_id: int, active: bool) -> dict | None:
+def set_job_active(job_id: int, user_id: int, active: bool) -> dict | None:
     with get_conn() as conn:
         conn.execute(
-            "UPDATE jobs SET active = ?, updated_at = ? WHERE id = ?",
-            (1 if active else 0, datetime.now(timezone.utc).isoformat(), job_id),
+            "UPDATE jobs SET active = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+            (1 if active else 0, datetime.now(timezone.utc).isoformat(), job_id, user_id),
         )
-        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
         return _row_to_job(row) if row is not None else None
 
 
-def delete_job(job_id: int) -> bool:
+def delete_job(job_id: int, user_id: int) -> bool:
     """Drops the job itself; its price/fetch_log history is left in place
     (job_id just points at nothing) rather than cascading the delete, so
     old charts remain reconstructable from raw_json if ever needed."""
     with get_conn() as conn:
-        cur = conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        cur = conn.execute("DELETE FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id))
         return cur.rowcount > 0
 
 
@@ -386,3 +422,78 @@ def get_last_fetch_status(job_id: int):
             (job_id, job_id),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ---- accounts ----
+
+
+def _row_to_user(row: sqlite3.Row) -> dict:
+    return {"id": row["id"], "email": row["email"], "approved": bool(row["approved"]), "created_at": row["created_at"]}
+
+
+def create_user(email: str, password_hash: str) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_conn() as conn:
+        is_first = conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"] == 0
+        cur = conn.execute(
+            "INSERT INTO users (email, password_hash, approved, created_at) VALUES (?, ?, ?, ?)",
+            (email, password_hash, 1 if is_first else 0, now),
+        )
+        user_id = cur.lastrowid
+        if is_first:
+            conn.execute("UPDATE jobs SET user_id = ? WHERE user_id IS NULL", (user_id,))
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        return _row_to_user(row)
+
+
+def get_user_by_email(email: str) -> dict | None:
+    """Includes password_hash (unlike _row_to_user's public shape) --
+    for login's own verify_password() call, not for API responses."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        return dict(row) if row is not None else None
+
+
+def get_pending_users() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, email, created_at FROM users WHERE approved = 0 ORDER BY created_at"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def approve_user(user_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("UPDATE users SET approved = 1 WHERE id = ?", (user_id,))
+        return cur.rowcount > 0
+
+
+def reject_user(user_id: int) -> bool:
+    """Only ever deletes a still-pending signup -- never an approved
+    account, so this can't be used to silently deactivate someone."""
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM users WHERE id = ? AND approved = 0", (user_id,))
+        return cur.rowcount > 0
+
+
+def create_session(user_id: int) -> str:
+    token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc).isoformat()
+    with get_conn() as conn:
+        conn.execute("INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)", (token, user_id, now))
+    return token
+
+
+def get_session_user(token: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT users.* FROM sessions JOIN users ON users.id = sessions.user_id
+               WHERE sessions.token = ?""",
+            (token,),
+        ).fetchone()
+        return _row_to_user(row) if row is not None else None
+
+
+def delete_session(token: str):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
