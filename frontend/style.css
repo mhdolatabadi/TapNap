@@ -323,6 +323,11 @@ select {
   color: var(--muted);
 }
 
+.tod-time-fa {
+  font-variant-numeric: normal;
+  color: var(--text);
+}
+
 input[type="time"] {
   background: var(--surface-2);
   color: var(--text);

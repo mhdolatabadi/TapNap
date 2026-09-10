@@ -418,15 +418,19 @@ let travelByDayChart = null;
 function renderChart(existing, canvas, config) {
   if (!existing) return new Chart(canvas, config);
 
-  // Preserve which series the user has toggled off, keyed by label so it
-  // survives series being added/removed/reordered between refreshes.
-  const hiddenLabels = new Set();
+  // Preserve each already-known series' shown/hidden state, keyed by label
+  // so it survives series being added/removed/reordered between refreshes --
+  // both a manual toggle AND a series that started hidden by lineDatasets()'s
+  // own default (secondary services) need to stick, not just "was hidden".
+  // A label lineDatasets() hasn't produced before (a service appearing for
+  // the first time) keeps whatever default `hidden` it was just given.
+  const visibility = new Map();
   existing.data.datasets.forEach((ds, i) => {
-    if (!existing.isDatasetVisible(i)) hiddenLabels.add(ds.label);
+    visibility.set(ds.label, existing.isDatasetVisible(i));
   });
 
   for (const ds of config.data.datasets) {
-    if (hiddenLabels.has(ds.label)) ds.hidden = true;
+    if (visibility.has(ds.label)) ds.hidden = !visibility.get(ds.label);
   }
 
   existing.data.labels = config.data.labels;
@@ -463,6 +467,7 @@ function chartOptions(group, resetBtnId, yTickCallback) {
     },
     plugins: {
       legend: {
+        position: "right",
         labels: {
           color: "#eef1f5",
           usePointStyle: true,
@@ -512,6 +517,10 @@ function lineDatasets(series) {
       backgroundColor: color,
       borderWidth: 2,
       borderDash: ord === 0 ? [] : [6, 3],
+      // Default view is just each provider's standard service (a provider
+      // can list several -- اسنپ/اکوپلاس/سفر اشتراکی) -- the rest stay one
+      // legend click away rather than cluttering the chart by default.
+      hidden: ord !== 0,
       pointRadius: 2,
       pointHoverRadius: 5,
       pointHitRadius: 12,
@@ -841,6 +850,19 @@ document.getElementById("range-select").addEventListener("change", () => {
   loadChart();
   loadTravelChart();
 });
+
+// <input type="time">'s own displayed digits follow the browser/OS locale,
+// not this page's -- a Persian-language browser may already show them in
+// Persian, but nothing here guarantees it. This readout always does.
+const FA_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
+const toFaDigits = (s) => String(s).replace(/[0-9]/g, (d) => FA_DIGITS[d]);
+
+function updateTodTimeLabel() {
+  document.getElementById("tod-time-fa").textContent = toFaDigits(document.getElementById("tod-time").value);
+}
+
+updateTodTimeLabel();
+document.getElementById("tod-time").addEventListener("input", updateTodTimeLabel);
 
 for (const id of ["tod-time", "tod-days"]) {
   document.getElementById(id).addEventListener("change", () => {
