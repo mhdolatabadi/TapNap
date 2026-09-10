@@ -267,6 +267,16 @@ select {
   display: block;
 }
 
+/* app.js hides the canvas itself (never the wrapper) whenever there's no
+   chart to show, so this collapses the reserved 300px box down to nothing
+   in that state -- the "no data" message that follows sits right under the
+   heading instead of at the bottom of a mostly-empty panel. */
+.chart-wrap:has(canvas[hidden]) {
+  height: 0;
+  min-height: 0;
+  flex: 0 0 auto;
+}
+
 .head-controls {
   display: flex;
   align-items: center;
