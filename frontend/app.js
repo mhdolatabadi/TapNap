@@ -266,6 +266,29 @@ async function deleteJob(job) {
 const PALETTE = ["#4f8cff", "#2ecc71", "#ff5b5b", "#f5a623", "#a06bff", "#00c2c2"];
 let chart = null;
 
+// Render `config` into an existing chart in place when possible, so a periodic
+// refresh doesn't wipe the user's legend toggles (hidden series) or flash a
+// full redraw. Only rebuilds from scratch when there's no chart yet.
+function renderChart(existing, canvas, config) {
+  if (!existing) return new Chart(canvas, config);
+
+  // Preserve which series the user has toggled off, keyed by label so it
+  // survives series being added/removed/reordered between refreshes.
+  const hiddenLabels = new Set();
+  existing.data.datasets.forEach((ds, i) => {
+    if (!existing.isDatasetVisible(i)) hiddenLabels.add(ds.label);
+  });
+
+  for (const ds of config.data.datasets) {
+    if (hiddenLabels.has(ds.label)) ds.hidden = true;
+  }
+
+  existing.data.labels = config.data.labels;
+  existing.data.datasets = config.data.datasets;
+  existing.update("none");
+  return existing;
+}
+
 function formatTime(iso) {
   const d = new Date(iso);
   return d.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
@@ -331,8 +354,7 @@ async function loadChart() {
     tension: 0.25,
   }));
 
-  if (chart) chart.destroy();
-  chart = new Chart(canvas, {
+  chart = renderChart(chart, canvas, {
     type: "line",
     data: { labels, datasets },
     options: {
@@ -412,8 +434,7 @@ async function loadTravelChart() {
     tension: 0.25,
   }));
 
-  if (travelChart) travelChart.destroy();
-  travelChart = new Chart(canvas, {
+  travelChart = renderChart(travelChart, canvas, {
     type: "line",
     data: { labels, datasets },
     options: {
