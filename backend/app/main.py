@@ -101,7 +101,11 @@ def api_list_jobs():
     result = []
     for job in jobs:
         last_fetch = db.get_last_fetch_status(job["id"])
-        result.append({**job, "status": _job_status(job, last_fetch)})
+        result.append({
+            **job,
+            "status": _job_status(job, last_fetch),
+            "latest_prices": db.get_latest_prices(job["id"]),
+        })
     return result
 
 
@@ -117,7 +121,12 @@ def api_create_job(job: JobIn):
 def api_get_job(job_id: int):
     job = _get_job_or_404(job_id)
     last_fetch = db.get_last_fetch_status(job_id)
-    return {**job, "status": _job_status(job, last_fetch), "last_fetch": last_fetch}
+    return {
+        **job,
+        "status": _job_status(job, last_fetch),
+        "last_fetch": last_fetch,
+        "latest_prices": db.get_latest_prices(job_id),
+    }
 
 
 @app.patch("/api/jobs/{job_id}")

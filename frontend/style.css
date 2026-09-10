@@ -401,6 +401,33 @@ input[type="time"] {
   margin-top: 2px;
 }
 
+.job-snapshot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.job-snapshot-item {
+  color: var(--muted);
+}
+
+.job-snapshot-item::before {
+  content: "●";
+  font-size: 8px;
+  margin-inline-end: 4px;
+  color: var(--item-color, var(--muted));
+}
+
+.job-snapshot-item[data-provider="snapp"] { --item-color: var(--snapp); }
+.job-snapshot-item[data-provider="tapsi"] { --item-color: var(--tapsi); }
+
+.job-snapshot-item.cheapest {
+  color: var(--text);
+  font-weight: 700;
+}
+
 .job-actions {
   display: flex;
   align-items: center;
