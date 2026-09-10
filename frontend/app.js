@@ -444,6 +444,7 @@ function destroyChart(existing) {
 }
 
 const formatToman = (v) => `${Math.round(v).toLocaleString("fa-IR")} تومان`;
+const formatMinutes = (v) => `${Math.round(v).toLocaleString("fa-IR")} دقیقه`;
 
 // Shared options: dark ticks/grid + drag-to-zoom on the x axis. `group` links
 // charts that share an x axis so a drag on one zooms the whole group;
@@ -639,7 +640,7 @@ async function loadTravelChart() {
   travelChart = renderChart(travelChart, canvas, {
     type: "line",
     data: { labels, datasets },
-    options: chartOptions("timeline", "travel-chart-reset", (v) => `${v} دقیقه`),
+    options: chartOptions("timeline", "travel-chart-reset", formatMinutes),
   });
 }
 
@@ -765,7 +766,7 @@ async function loadByDayCharts() {
       travelByDayChart = renderChart(travelByDayChart, travelCanvas, {
         type: "line",
         data: { labels, datasets },
-        options: chartOptions("daily", "travel-by-day-reset", (v) => `${v} دقیقه`),
+        options: chartOptions("daily", "travel-by-day-reset", formatMinutes),
       });
     }
   }

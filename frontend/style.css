@@ -449,21 +449,32 @@ input[type="time"] {
 
 .job-snapshot {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 4px 14px;
-  margin-top: 6px;
-  font-size: 12px;
+  gap: 6px 8px;
+  margin-top: 8px;
 }
 
 .job-snapshot-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .job-snapshot-item::before {
-  content: "●";
-  font-size: 8px;
-  margin-inline-end: 4px;
-  color: var(--item-color, var(--muted));
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--item-color, var(--muted));
+  flex: none;
 }
 
 .job-snapshot-item[data-provider="snapp"] { --item-color: var(--snapp); }
@@ -472,11 +483,14 @@ input[type="time"] {
 .job-snapshot-item.cheapest {
   color: var(--text);
   font-weight: 700;
+  border-color: var(--item-color, var(--line));
 }
 
 .job-snapshot-time {
   color: var(--muted);
-  opacity: 0.75;
+  font-size: 12px;
+  opacity: 0.8;
+  margin-inline-start: 2px;
 }
 
 .job-actions {
