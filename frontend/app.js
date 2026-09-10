@@ -168,16 +168,66 @@ function jobRouteText(job) {
 function priceSnapshot(job) {
   if (!job.latest_prices || !job.latest_prices.length) return null;
   const minByProvider = new Map();
+  let updatedAt = job.latest_prices[0].checked_at;
   for (const p of job.latest_prices) {
     const cur = minByProvider.get(p.provider);
     if (cur == null || p.price < cur) minByProvider.set(p.provider, p.price);
+    if (p.checked_at > updatedAt) updatedAt = p.checked_at;
   }
   const entries = Array.from(minByProvider.entries());
   const [cheapestProvider] = entries.reduce((a, b) => (b[1] < a[1] ? b : a));
-  return { entries, cheapestProvider };
+  return { entries, cheapestProvider, updatedAt };
+}
+
+// "۵ دقیقه پیش" etc, so a job card shows how fresh its snapshot price is --
+// without this, a stale price (scheduler stuck, provider down for hours)
+// looks identical to a fresh one.
+function relativeTime(iso) {
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (minutes < 1) return "همین الان";
+  if (minutes < 60) return `${minutes.toLocaleString("fa-IR")} دقیقه پیش`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours.toLocaleString("fa-IR")} ساعت پیش`;
+  return `${Math.round(hours / 24).toLocaleString("fa-IR")} روز پیش`;
+}
+
+// One line above the job list: across every job with a current price, how
+// many routes is each provider currently the cheaper one on.
+function renderJobsSummary() {
+  const el = document.getElementById("jobs-summary");
+  const snapshots = state.jobs.map(priceSnapshot).filter(Boolean);
+  if (!snapshots.length) {
+    el.textContent = "";
+    return;
+  }
+  const counts = new Map();
+  for (const s of snapshots) counts.set(s.cheapestProvider, (counts.get(s.cheapestProvider) || 0) + 1);
+  const parts = Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([provider, count]) => `${PROVIDER_LABELS[provider] || provider} در ${count.toLocaleString("fa-IR")} مسیر`);
+  el.textContent = `از ${snapshots.length.toLocaleString("fa-IR")} مسیر با قیمت لحظه‌ای — ارزون‌تر: ${parts.join(" · ")}`;
+}
+
+// A job in "error" state buried in a long list is easy to miss -- surface
+// it here so a systemic problem (an expired token affecting every job at
+// once) is visible without opening each job to find out.
+function renderJobsErrorBanner() {
+  const el = document.getElementById("jobs-error-banner");
+  const errored = state.jobs.filter((j) => j.status === "error");
+  if (!errored.length) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.textContent =
+    errored.length === 1
+      ? `«${errored[0].name}» با خطا مواجه شده — برای جزئیات، وضعیت دریافتش رو پایین صفحه ببین.`
+      : `${errored.length.toLocaleString("fa-IR")} کار با خطا مواجه شدن — برای جزئیات هرکدوم، وضعیت دریافتش رو پایین صفحه ببین.`;
 }
 
 function renderJobs() {
+  renderJobsErrorBanner();
+  renderJobsSummary();
   const el = document.getElementById("jobs-list");
   if (!state.jobs.length) {
     el.textContent = "هنوز هیچ کاری تعریف نشده.";
@@ -200,13 +250,14 @@ function renderJobs() {
     if (snapshot) {
       const row = document.createElement("div");
       row.className = "job-snapshot";
-      row.innerHTML = snapshot.entries
+      const chips = snapshot.entries
         .map(([provider, price]) => {
           const label = PROVIDER_LABELS[provider] || provider;
           const cheap = provider === snapshot.cheapestProvider ? " cheapest" : "";
           return `<span class="job-snapshot-item${cheap}" data-provider="${provider}">${label}: ${Math.round(price).toLocaleString("fa-IR")} تومان</span>`;
         })
         .join("");
+      row.innerHTML = `${chips}<span class="job-snapshot-time">${relativeTime(snapshot.updatedAt)}</span>`;
       info.appendChild(row);
     }
     info.addEventListener("click", () => selectJob(job.id));
@@ -392,6 +443,8 @@ function destroyChart(existing) {
   return null;
 }
 
+const formatToman = (v) => `${Math.round(v).toLocaleString("fa-IR")} تومان`;
+
 // Shared options: dark ticks/grid + drag-to-zoom on the x axis. `group` links
 // charts that share an x axis so a drag on one zooms the whole group;
 // `resetBtnId` is the button revealed once that group is zoomed in.
@@ -545,7 +598,7 @@ async function loadChart() {
   chart = renderChart(chart, canvas, {
     type: "line",
     data: { labels, datasets },
-    options: chartOptions("timeline", "price-chart-reset"),
+    options: chartOptions("timeline", "price-chart-reset", formatToman),
   });
 }
 
@@ -690,7 +743,7 @@ async function loadByDayCharts() {
       priceByDayChart = renderChart(priceByDayChart, priceCanvas, {
         type: "line",
         data: { labels, datasets },
-        options: chartOptions("daily", "price-by-day-reset"),
+        options: chartOptions("daily", "price-by-day-reset", formatToman),
       });
     }
   }
@@ -829,9 +882,10 @@ async function loadStatus() {
       row.className = "status-row";
       const time = formatTime(entry.checked_at);
       const providerLabel = PROVIDER_LABELS[entry.provider] || entry.provider;
+      const detail = entry.message ? `<span class="status-detail">${entry.message}</span>` : "";
       row.innerHTML = `<span>${providerLabel}</span><span class="${entry.ok ? "status-ok" : "status-bad"}">${
-        entry.ok ? "OK" : "خطا"
-      } · ${time}${entry.message ? " · " + entry.message : ""}</span>`;
+        entry.ok ? "موفق" : "خطا"
+      } · ${time}${detail}</span>`;
       el.appendChild(row);
     }
   } catch {
