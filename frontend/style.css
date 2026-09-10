@@ -371,6 +371,14 @@ input[type="time"] {
 .status-ok { color: var(--ok); }
 .status-bad { color: var(--danger); }
 
+.status-detail {
+  color: var(--muted);
+}
+
+.status-detail::before {
+  content: " · ";
+}
+
 .job-name-input {
   width: 100%;
   background: var(--surface-2);

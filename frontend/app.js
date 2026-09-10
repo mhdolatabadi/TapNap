@@ -880,9 +880,10 @@ async function loadStatus() {
       row.className = "status-row";
       const time = formatTime(entry.checked_at);
       const providerLabel = PROVIDER_LABELS[entry.provider] || entry.provider;
+      const detail = entry.message ? `<span class="status-detail">${entry.message}</span>` : "";
       row.innerHTML = `<span>${providerLabel}</span><span class="${entry.ok ? "status-ok" : "status-bad"}">${
-        entry.ok ? "OK" : "خطا"
-      } · ${time}${entry.message ? " · " + entry.message : ""}</span>`;
+        entry.ok ? "موفق" : "خطا"
+      } · ${time}${detail}</span>`;
       el.appendChild(row);
     }
   } catch {
