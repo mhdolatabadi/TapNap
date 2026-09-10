@@ -36,6 +36,13 @@
 
 * { box-sizing: border-box; }
 
+/* The [hidden] attribute's UA-default `display: none` loses to any author
+   rule that sets `display` on the same element (e.g. `.account-bar,
+   .auth-form { display: flex }`) at equal specificity, since author styles
+   beat UA styles regardless -- toggling `.hidden = true/false` on such an
+   element would otherwise silently stop hiding it. Force it everywhere. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -80,6 +87,56 @@ header h1 {
   margin: 0;
   color: var(--muted);
   font-size: 13px;
+}
+
+.account-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-inline-start: auto;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+#auth-panel {
+  max-width: 380px;
+  margin: 48px auto;
+  text-align: center;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 320px;
+  margin: 0 auto;
+  text-align: start;
+}
+
+.auth-form input {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.auth-switch {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--focus);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
 }
 
 main {
@@ -157,6 +214,8 @@ main {
 }
 
 .icon-btn:hover { background: #fff; }
+.icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.icon-btn:disabled:hover { background: var(--text); }
 
 .mode-btn {
   background: transparent;
