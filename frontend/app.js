@@ -177,7 +177,25 @@ function priceSnapshot(job) {
   return { entries, cheapestProvider };
 }
 
+// One line above the job list: across every job with a current price, how
+// many routes is each provider currently the cheaper one on.
+function renderJobsSummary() {
+  const el = document.getElementById("jobs-summary");
+  const snapshots = state.jobs.map(priceSnapshot).filter(Boolean);
+  if (!snapshots.length) {
+    el.textContent = "";
+    return;
+  }
+  const counts = new Map();
+  for (const s of snapshots) counts.set(s.cheapestProvider, (counts.get(s.cheapestProvider) || 0) + 1);
+  const parts = Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([provider, count]) => `${PROVIDER_LABELS[provider] || provider} در ${count.toLocaleString("fa-IR")} مسیر`);
+  el.textContent = `از ${snapshots.length.toLocaleString("fa-IR")} مسیر با قیمت لحظه‌ای — ارزون‌تر: ${parts.join(" · ")}`;
+}
+
 function renderJobs() {
+  renderJobsSummary();
   const el = document.getElementById("jobs-list");
   if (!state.jobs.length) {
     el.textContent = "هنوز هیچ کاری تعریف نشده.";
