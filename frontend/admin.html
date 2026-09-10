@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tapnap — پنل مدیریت</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>Tapnap</h1>
+  <p class="subtitle">پنل مدیریت</p>
+</header>
+
+<main>
+  <section class="panel span-all" id="admin-gate">
+    <h2>ورود مدیر</h2>
+    <form id="admin-password-form" class="auth-form">
+      <input id="admin-password-input" type="password" placeholder="رمز مدیر" autocomplete="off" required>
+      <button type="submit" class="primary-btn">ورود</button>
+    </form>
+    <p id="admin-gate-status" class="save-status"></p>
+  </section>
+
+  <section class="panel span-all" id="admin-users-panel" hidden>
+    <div class="panel-head">
+      <h2>صندوق درخواست‌های عضویت <span id="admin-pending-count" class="inbox-count" hidden></span></h2>
+      <button id="admin-refresh" class="job-btn">تازه‌سازی</button>
+    </div>
+    <div id="admin-users-list" class="inbox-list">در حال بارگذاری…</div>
+  </section>
+</main>
+
+<script src="/admin.js"></script>
+</body>
+</html>
