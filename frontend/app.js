@@ -168,13 +168,27 @@ function jobRouteText(job) {
 function priceSnapshot(job) {
   if (!job.latest_prices || !job.latest_prices.length) return null;
   const minByProvider = new Map();
+  let updatedAt = job.latest_prices[0].checked_at;
   for (const p of job.latest_prices) {
     const cur = minByProvider.get(p.provider);
     if (cur == null || p.price < cur) minByProvider.set(p.provider, p.price);
+    if (p.checked_at > updatedAt) updatedAt = p.checked_at;
   }
   const entries = Array.from(minByProvider.entries());
   const [cheapestProvider] = entries.reduce((a, b) => (b[1] < a[1] ? b : a));
-  return { entries, cheapestProvider };
+  return { entries, cheapestProvider, updatedAt };
+}
+
+// "۵ دقیقه پیش" etc, so a job card shows how fresh its snapshot price is --
+// without this, a stale price (scheduler stuck, provider down for hours)
+// looks identical to a fresh one.
+function relativeTime(iso) {
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (minutes < 1) return "همین الان";
+  if (minutes < 60) return `${minutes.toLocaleString("fa-IR")} دقیقه پیش`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours.toLocaleString("fa-IR")} ساعت پیش`;
+  return `${Math.round(hours / 24).toLocaleString("fa-IR")} روز پیش`;
 }
 
 // One line above the job list: across every job with a current price, how
@@ -218,13 +232,14 @@ function renderJobs() {
     if (snapshot) {
       const row = document.createElement("div");
       row.className = "job-snapshot";
-      row.innerHTML = snapshot.entries
+      const chips = snapshot.entries
         .map(([provider, price]) => {
           const label = PROVIDER_LABELS[provider] || provider;
           const cheap = provider === snapshot.cheapestProvider ? " cheapest" : "";
           return `<span class="job-snapshot-item${cheap}" data-provider="${provider}">${label}: ${Math.round(price).toLocaleString("fa-IR")} تومان</span>`;
         })
         .join("");
+      row.innerHTML = `${chips}<span class="job-snapshot-time">${relativeTime(snapshot.updatedAt)}</span>`;
       info.appendChild(row);
     }
     info.addEventListener("click", () => selectJob(job.id));

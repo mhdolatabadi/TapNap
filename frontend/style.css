@@ -456,6 +456,11 @@ input[type="time"] {
   font-weight: 700;
 }
 
+.job-snapshot-time {
+  color: var(--muted);
+  opacity: 0.75;
+}
+
 .job-actions {
   display: flex;
   align-items: center;
