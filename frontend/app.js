@@ -73,6 +73,12 @@ document.getElementById("new-job-toggle").addEventListener("click", () => {
   else hideNewJobPanel();
 });
 
+document.getElementById("cancel-job").addEventListener("click", () => {
+  document.getElementById("job-name").value = "";
+  document.getElementById("save-status").textContent = "";
+  hideNewJobPanel();
+});
+
 function setMode(mode) {
   state.mode = mode;
   document.querySelectorAll(".mode-btn").forEach((btn) => {
@@ -156,6 +162,21 @@ function jobRouteText(job) {
   return `${o} ← ${d}`;
 }
 
+// Cheapest current price per provider (a provider may run several services --
+// take the "starting from" figure) so the job card can answer "who's cheaper
+// right now" without opening the chart.
+function priceSnapshot(job) {
+  if (!job.latest_prices || !job.latest_prices.length) return null;
+  const minByProvider = new Map();
+  for (const p of job.latest_prices) {
+    const cur = minByProvider.get(p.provider);
+    if (cur == null || p.price < cur) minByProvider.set(p.provider, p.price);
+  }
+  const entries = Array.from(minByProvider.entries());
+  const [cheapestProvider] = entries.reduce((a, b) => (b[1] < a[1] ? b : a));
+  return { entries, cheapestProvider };
+}
+
 function renderJobs() {
   const el = document.getElementById("jobs-list");
   if (!state.jobs.length) {
@@ -175,6 +196,19 @@ function renderJobs() {
       <div class="job-name">${job.name}</div>
       <div class="job-route">${jobRouteText(job)}</div>
     `;
+    const snapshot = priceSnapshot(job);
+    if (snapshot) {
+      const row = document.createElement("div");
+      row.className = "job-snapshot";
+      row.innerHTML = snapshot.entries
+        .map(([provider, price]) => {
+          const label = PROVIDER_LABELS[provider] || provider;
+          const cheap = provider === snapshot.cheapestProvider ? " cheapest" : "";
+          return `<span class="job-snapshot-item${cheap}" data-provider="${provider}">${label}: ${Math.round(price).toLocaleString("fa-IR")} تومان</span>`;
+        })
+        .join("");
+      info.appendChild(row);
+    }
     info.addEventListener("click", () => selectJob(job.id));
 
     const badge = document.createElement("span");

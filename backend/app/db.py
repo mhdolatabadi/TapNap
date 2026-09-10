@@ -359,6 +359,21 @@ def get_travel_times(job_id: int, since_iso: str):
         return [dict(r) for r in rows]
 
 
+def get_latest_prices(job_id: int):
+    """Latest price row per (provider, service_name) for this job -- lets
+    the UI show a current-price snapshot (e.g. on the job card) without
+    the reader having to open the historical chart."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT provider, service_name, price, checked_at FROM prices
+               WHERE job_id = ?
+                 AND id IN (SELECT MAX(id) FROM prices WHERE job_id = ? GROUP BY provider, service_name)
+               ORDER BY provider, service_name""",
+            (job_id, job_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_last_fetch_status(job_id: int):
     """Latest fetch_log row per provider for this job -- used both for the
     status panel and to decide whether the job is currently "running" or

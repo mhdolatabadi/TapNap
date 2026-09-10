@@ -202,8 +202,21 @@ main {
 .origin-dot { background: var(--origin); }
 .destination-dot { background: var(--destination); }
 
-.primary-btn {
+.new-job-hint {
+  margin: -6px 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
   margin-top: 12px;
+}
+
+.primary-btn {
   background: var(--text);
   color: var(--bg);
   border: none;
@@ -218,7 +231,6 @@ main {
 .primary-btn:hover { background: #fff; }
 
 .save-status {
-  margin-inline-start: 10px;
   font-size: 13px;
   color: var(--muted);
 }
@@ -265,6 +277,16 @@ select {
      chart every tick. display:block avoids the few extra px of
      inline-baseline gap under the canvas. */
   display: block;
+}
+
+/* app.js hides the canvas itself (never the wrapper) whenever there's no
+   chart to show, so this collapses the reserved 300px box down to nothing
+   in that state -- the "no data" message that follows sits right under the
+   heading instead of at the bottom of a mostly-empty panel. */
+.chart-wrap:has(canvas[hidden]) {
+  height: 0;
+  min-height: 0;
+  flex: 0 0 auto;
 }
 
 .head-controls {
@@ -399,6 +421,33 @@ input[type="time"] {
   font-size: 13px;
   color: var(--muted);
   margin-top: 2px;
+}
+
+.job-snapshot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.job-snapshot-item {
+  color: var(--muted);
+}
+
+.job-snapshot-item::before {
+  content: "●";
+  font-size: 8px;
+  margin-inline-end: 4px;
+  color: var(--item-color, var(--muted));
+}
+
+.job-snapshot-item[data-provider="snapp"] { --item-color: var(--snapp); }
+.job-snapshot-item[data-provider="tapsi"] { --item-color: var(--tapsi); }
+
+.job-snapshot-item.cheapest {
+  color: var(--text);
+  font-weight: 700;
 }
 
 .job-actions {
