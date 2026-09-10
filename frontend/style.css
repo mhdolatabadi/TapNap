@@ -307,34 +307,3 @@ select {
 
 .marker-pin.origin { background: var(--origin); }
 .marker-pin.destination { background: var(--destination); }
-
-.admin-hint {
-  color: var(--muted);
-  font-size: 13px;
-  margin: 0 0 12px;
-}
-
-.admin-form {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-
-.admin-form input {
-  flex: 1;
-  min-width: 160px;
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-family: inherit;
-  font-size: 14px;
-}
-
-.admin-status {
-  font-size: 13px;
-  color: var(--muted);
-  margin: 0;
-}
