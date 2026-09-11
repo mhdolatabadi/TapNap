@@ -162,19 +162,21 @@ function jobRouteText(job) {
   return `${o} ← ${d}`;
 }
 
-// Cheapest current price per provider (a provider may run several services --
-// take the "starting from" figure) so the job card can answer "who's cheaper
-// right now" without opening the chart.
+// Each provider's current "standard" service price (job.latest_prices is
+// already one row per provider -- see db.get_latest_prices) so the job card
+// can answer "who's cheaper right now" without opening the chart. Keeping
+// the lowest if a provider ever shows up more than once here is just
+// defensive -- the backend already picks one row per provider.
 function priceSnapshot(job) {
   if (!job.latest_prices || !job.latest_prices.length) return null;
-  const minByProvider = new Map();
+  const priceByProvider = new Map();
   let updatedAt = job.latest_prices[0].checked_at;
   for (const p of job.latest_prices) {
-    const cur = minByProvider.get(p.provider);
-    if (cur == null || p.price < cur) minByProvider.set(p.provider, p.price);
+    const cur = priceByProvider.get(p.provider);
+    if (cur == null || p.price < cur) priceByProvider.set(p.provider, p.price);
     if (p.checked_at > updatedAt) updatedAt = p.checked_at;
   }
-  const entries = Array.from(minByProvider.entries());
+  const entries = Array.from(priceByProvider.entries());
   const [cheapestProvider] = entries.reduce((a, b) => (b[1] < a[1] ? b : a));
   return { entries, cheapestProvider, updatedAt };
 }
