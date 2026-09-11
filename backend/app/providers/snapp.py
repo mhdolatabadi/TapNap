@@ -104,7 +104,12 @@ def _extract_services(data: dict) -> list[dict]:
         else:
             price = price_field
         price = price if price is not None else item.get("final") or item.get("final_price")
-        if name is not None and price is not None:
+        # A service with no cars available reports price 0 (or, seen once,
+        # a negative placeholder) rather than omitting the field entirely --
+        # unlike Tapsi, which flags this via its own `isAvailable` field.
+        # Treat non-positive as "no real offer" so a temporarily-unavailable
+        # category doesn't get stored/displayed as Snapp's cheapest price.
+        if name is not None and price is not None and price > 0:
             # Snapp's API reports Rial; Tapsi's reports Toman natively.
             # Normalize to Toman here so the two providers are comparable
             # on the same chart (1 Toman = 10 Rial, always an exact divide).

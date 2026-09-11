@@ -396,16 +396,28 @@ def get_travel_times(job_id: int, since_iso: str):
 
 
 def get_latest_prices(job_id: int):
-    """Latest price row per (provider, service_name) for this job -- lets
-    the UI show a current-price snapshot (e.g. on the job card) without
-    the reader having to open the historical chart."""
+    """Latest price for each provider's "standard" service -- one row per
+    provider, not per (provider, service_name) -- for the job card's price
+    snapshot. "Standard" is whichever service_name that provider first ever
+    reported for this job: providers list their ride categories in the same
+    order every poll, so this stays stable, and it lines up with the same
+    notion the chart already uses to pick its default-visible series (see
+    lineDatasets() in app.js). Taking the cheapest across every service
+    instead would let a pricier premium option -- or, before the Snapp
+    zero-price-service fix, a momentarily unavailable one -- get shown on
+    the job card as if it were the normal fare."""
     with get_conn() as conn:
         rows = conn.execute(
-            """SELECT provider, service_name, price, checked_at FROM prices
-               WHERE job_id = ?
-                 AND id IN (SELECT MAX(id) FROM prices WHERE job_id = ? GROUP BY provider, service_name)
-               ORDER BY provider, service_name""",
-            (job_id, job_id),
+            """SELECT p.provider, p.service_name, p.price, p.checked_at
+               FROM prices p
+               JOIN (
+                   SELECT provider, service_name FROM prices
+                   WHERE job_id = ? AND id IN (SELECT MIN(id) FROM prices WHERE job_id = ? GROUP BY provider)
+               ) std ON std.provider = p.provider AND std.service_name = p.service_name
+               WHERE p.job_id = ?
+                 AND p.id IN (SELECT MAX(id) FROM prices WHERE job_id = ? GROUP BY provider, service_name)
+               ORDER BY p.provider""",
+            (job_id, job_id, job_id, job_id),
         ).fetchall()
         return [dict(r) for r in rows]
 
