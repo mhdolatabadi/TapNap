@@ -56,6 +56,10 @@ class JobActiveIn(BaseModel):
     active: bool
 
 
+class RoundTripIn(BaseModel):
+    enabled: bool
+
+
 class OtpRequestIn(BaseModel):
     cellphone: str
 
@@ -131,14 +135,26 @@ def _job_status(job: dict, last_fetch: list[dict]) -> str:
     return "running"
 
 
+def _round_trip_fields(job: dict, return_leg_id_by_base: dict[int, int]) -> dict:
+    """is_return_leg: this job IS an auto-generated mirror (paired_job_id
+    points at its base). round_trip_job_id: the id of "the other job in
+    the pair", from whichever side you're looking -- the base's return leg,
+    or a return leg's own base -- or None if this job has no pair at all."""
+    if job["paired_job_id"] is not None:
+        return {"is_return_leg": True, "round_trip_job_id": job["paired_job_id"]}
+    return {"is_return_leg": False, "round_trip_job_id": return_leg_id_by_base.get(job["id"])}
+
+
 @app.get("/api/jobs")
 def api_list_jobs(user: dict = Depends(_current_user)):
     jobs = db.get_jobs(user["id"])
+    return_leg_id_by_base = {j["paired_job_id"]: j["id"] for j in jobs if j["paired_job_id"] is not None}
     result = []
     for job in jobs:
         last_fetch = db.get_last_fetch_status(job["id"])
         result.append({
             **job,
+            **_round_trip_fields(job, return_leg_id_by_base),
             "status": _job_status(job, last_fetch),
             "latest_prices": db.get_latest_prices(job["id"]),
         })
@@ -159,8 +175,10 @@ def api_create_job(job: JobIn, user: dict = Depends(_current_user)):
 def api_get_job(job_id: int, user: dict = Depends(_current_user)):
     job = _get_job_or_404(job_id, user["id"])
     last_fetch = db.get_last_fetch_status(job_id)
+    return_leg = job["paired_job_id"] is None and db.get_return_leg(job_id, user["id"])
     return {
         **job,
+        **_round_trip_fields(job, {job["id"]: return_leg["id"]} if return_leg else {}),
         "status": _job_status(job, last_fetch),
         "last_fetch": last_fetch,
         "latest_prices": db.get_latest_prices(job_id),
@@ -172,6 +190,29 @@ def api_set_job_active(job_id: int, body: JobActiveIn, user: dict = Depends(_cur
     _get_job_or_404(job_id, user["id"])
     job = db.set_job_active(job_id, user["id"], body.active)
     return {**job, "status": _job_status(job, db.get_last_fetch_status(job_id))}
+
+
+@app.post("/api/jobs/{job_id}/round-trip")
+def api_set_round_trip(job_id: int, body: RoundTripIn, user: dict = Depends(_current_user)):
+    job = _get_job_or_404(job_id, user["id"])
+    if job["paired_job_id"] is not None:
+        # job_id is itself an auto-generated return leg -- the toggle lives
+        # on the base job's card, not here (see is_return_leg in the API
+        # response), so this would only be reachable by calling the
+        # endpoint directly rather than through the UI.
+        raise HTTPException(400, "این مسیر خودش برگشتِ یک مسیر دیگه‌ست")
+
+    if body.enabled:
+        if db.get_return_leg(job_id, user["id"]) is not None:
+            return {"ok": True}  # already on -- idempotent
+        if db.count_jobs_for_user(user["id"]) >= db.MAX_JOBS_PER_USER:
+            raise HTTPException(
+                403, "برای محاسبه برگشت به یک مسیر جدید نیاز داره، ولی به سقف ۳ مسیر رسیدی"
+            )
+        db.create_return_leg(user["id"], job)
+    else:
+        db.delete_return_leg(job_id, user["id"])
+    return {"ok": True}
 
 
 @app.delete("/api/jobs/{job_id}")

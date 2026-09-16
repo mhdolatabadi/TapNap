@@ -16,6 +16,12 @@ CREATE TABLE IF NOT EXISTS jobs (
     destination_lng REAL NOT NULL,
     destination_label TEXT,
     active INTEGER NOT NULL DEFAULT 1,
+    -- Non-NULL only on an auto-generated return leg: the id of the job it
+    -- mirrors (origin/destination swapped). A base job never sets this on
+    -- itself -- "does job X have a return leg" is a reverse lookup
+    -- (WHERE paired_job_id = X.id), so the pairing lives in exactly one
+    -- place and can't desync between the two rows.
+    paired_job_id INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -90,6 +96,7 @@ CREATE INDEX IF NOT EXISTS idx_prices_job ON prices (job_id, checked_at);
 CREATE INDEX IF NOT EXISTS idx_fetch_log_job ON fetch_log (job_id);
 CREATE INDEX IF NOT EXISTS idx_travel_times_job ON travel_times (job_id, checked_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs (user_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_paired ON jobs (paired_job_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
 """
 
@@ -128,6 +135,8 @@ def init_db():
             # NULL here means "predates accounts" -- create_user() assigns
             # every such job to the first account ever created.
             conn.execute("ALTER TABLE jobs ADD COLUMN user_id INTEGER")
+        if "paired_job_id" not in job_cols:
+            conn.execute("ALTER TABLE jobs ADD COLUMN paired_job_id INTEGER")
 
         conn.executescript(INDEXES)
 
@@ -232,6 +241,7 @@ def _row_to_job(row: sqlite3.Row) -> dict:
             "label": row["destination_label"],
         },
         "active": bool(row["active"]),
+        "paired_job_id": row["paired_job_id"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -299,9 +309,51 @@ def set_job_active(job_id: int, user_id: int, active: bool) -> dict | None:
 def delete_job(job_id: int, user_id: int) -> bool:
     """Drops the job itself; its price/fetch_log history is left in place
     (job_id just points at nothing) rather than cascading the delete, so
-    old charts remain reconstructable from raw_json if ever needed."""
+    old charts remain reconstructable from raw_json if ever needed. Its
+    return leg (if any) IS cascaded, though -- an orphaned mirror job with
+    no way to reach it from the UI would just poll forever unnoticed."""
     with get_conn() as conn:
+        conn.execute("DELETE FROM jobs WHERE paired_job_id = ? AND user_id = ?", (job_id, user_id))
         cur = conn.execute("DELETE FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id))
+        return cur.rowcount > 0
+
+
+def get_return_leg(base_job_id: int, user_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM jobs WHERE paired_job_id = ? AND user_id = ?", (base_job_id, user_id)
+        ).fetchone()
+        return _row_to_job(row) if row is not None else None
+
+
+def create_return_leg(user_id: int, base_job: dict) -> dict:
+    """Mirrors base_job's origin/destination and links back to it via
+    paired_job_id -- from there on it's an ordinary job (schedulable,
+    deletable, chartable on its own) that just happens to know what it's
+    the return leg of."""
+    now = datetime.now(timezone.utc).isoformat()
+    name = f"{base_job['name']} (برگشت)"
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO jobs
+               (user_id, name, origin_lat, origin_lng, origin_label,
+                destination_lat, destination_lng, destination_label,
+                active, paired_job_id, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)""",
+            (
+                user_id, name,
+                base_job["destination"]["lat"], base_job["destination"]["lng"], base_job["destination"]["label"],
+                base_job["origin"]["lat"], base_job["origin"]["lng"], base_job["origin"]["label"],
+                base_job["id"], now, now,
+            ),
+        )
+        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return _row_to_job(row)
+
+
+def delete_return_leg(base_job_id: int, user_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM jobs WHERE paired_job_id = ? AND user_id = ?", (base_job_id, user_id))
         return cur.rowcount > 0
 
 
