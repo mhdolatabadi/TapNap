@@ -50,6 +50,8 @@ class JobIn(BaseModel):
     name: str
     origin: Point
     destination: Point
+    track_price: bool = True
+    track_travel_time: bool = True
 
 
 class JobActiveIn(BaseModel):
@@ -58,6 +60,11 @@ class JobActiveIn(BaseModel):
 
 class RoundTripIn(BaseModel):
     enabled: bool
+
+
+class JobTrackingIn(BaseModel):
+    track_price: bool
+    track_travel_time: bool
 
 
 class OtpRequestIn(BaseModel):
@@ -166,9 +173,14 @@ def api_create_job(job: JobIn, user: dict = Depends(_current_user)):
     name = job.name.strip()
     if not name:
         raise HTTPException(400, "name is required")
+    if not job.track_price and not job.track_travel_time:
+        raise HTTPException(400, "حداقل یکی از قیمت یا زمان مسیر باید فعال باشه")
     if db.count_jobs_for_user(user["id"]) >= db.MAX_JOBS_PER_USER:
         raise HTTPException(403, "هر حساب حداکثر ۳ مسیر می‌تونه داشته باشه")
-    return db.create_job(user["id"], name, job.origin.model_dump(), job.destination.model_dump())
+    return db.create_job(
+        user["id"], name, job.origin.model_dump(), job.destination.model_dump(),
+        job.track_price, job.track_travel_time,
+    )
 
 
 @app.get("/api/jobs/{job_id}")
@@ -189,6 +201,15 @@ def api_get_job(job_id: int, user: dict = Depends(_current_user)):
 def api_set_job_active(job_id: int, body: JobActiveIn, user: dict = Depends(_current_user)):
     _get_job_or_404(job_id, user["id"])
     job = db.set_job_active(job_id, user["id"], body.active)
+    return {**job, "status": _job_status(job, db.get_last_fetch_status(job_id))}
+
+
+@app.post("/api/jobs/{job_id}/tracking")
+def api_set_job_tracking(job_id: int, body: JobTrackingIn, user: dict = Depends(_current_user)):
+    _get_job_or_404(job_id, user["id"])
+    if not body.track_price and not body.track_travel_time:
+        raise HTTPException(400, "حداقل یکی از قیمت یا زمان مسیر باید فعال باشه")
+    job = db.set_job_tracking(job_id, user["id"], body.track_price, body.track_travel_time)
     return {**job, "status": _job_status(job, db.get_last_fetch_status(job_id))}
 
 
