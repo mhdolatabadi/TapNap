@@ -456,7 +456,7 @@ async function loadJobs() {
   }
 
   renderJobs();
-  await Promise.all([loadChart(), loadTravelChart(), loadByDayCharts(), loadStatus()]);
+  await Promise.all([loadChart(), loadByDayCharts(), loadStatus()]);
 }
 
 function selectJob(jobId) {
@@ -465,11 +465,8 @@ function selectJob(jobId) {
   resetAllZoom();
   // Drop every chart up front so the switch never flashes the old job's data.
   chart = destroyChart(chart);
-  travelChart = destroyChart(travelChart);
-  priceByDayChart = destroyChart(priceByDayChart);
-  travelByDayChart = destroyChart(travelByDayChart);
+  dayChart = destroyChart(dayChart);
   loadChart();
-  loadTravelChart();
   loadByDayCharts();
   loadStatus();
 }
@@ -616,9 +613,7 @@ function providerOf(label) {
 if (window.ChartZoom) Chart.register(window.ChartZoom);
 
 let chart = null;
-let travelChart = null;
-let priceByDayChart = null;
-let travelByDayChart = null;
+let dayChart = null;
 
 // Render `config` into an existing chart in place when possible, so a periodic
 // refresh doesn't wipe the user's legend toggles (hidden series), lose the
@@ -659,10 +654,12 @@ function destroyChart(existing) {
 const formatToman = (v) => `${Math.round(v).toLocaleString("fa-IR")} تومان`;
 const formatMinutes = (v) => `${Math.round(v).toLocaleString("fa-IR")} دقیقه`;
 
-// Shared options: dark ticks/grid + drag-to-zoom on the x axis. `group` links
-// charts that share an x axis so a drag on one zooms the whole group;
-// `resetBtnId` is the button revealed once that group is zoomed in.
-function chartOptions(group, resetBtnId, yTickCallback) {
+// Shared options for a chart combining price (left axis, "y") and
+// travel-time (right axis, "y1") series in one plot -- drag-to-zoom on the
+// x axis, `resetBtnId` is the button revealed once zoomed in. Since each
+// panel is now a single chart, zoom just applies to itself; no more
+// syncing a pair of charts against each other.
+function chartOptions(resetBtnId) {
   return {
     responsive: true,
     maintainAspectRatio: false,
@@ -671,12 +668,29 @@ function chartOptions(group, resetBtnId, yTickCallback) {
     // every series' value at that time in one tooltip.
     interaction: { mode: "index", intersect: false, axis: "x" },
     scales: {
-      y: { ticks: { color: TICK_COLOR, font: { family: "Vazirmatn" }, callback: yTickCallback }, grid: { color: GRID_COLOR } },
+      y: {
+        position: "left",
+        ticks: { color: TICK_COLOR, font: { family: "Vazirmatn" }, callback: formatToman },
+        grid: { color: GRID_COLOR },
+      },
+      y1: {
+        position: "right",
+        ticks: { color: TICK_COLOR, font: { family: "Vazirmatn" }, callback: formatMinutes },
+        // Two overlapping gridlines from both axes would just look like
+        // visual noise -- only the price axis draws them.
+        grid: { drawOnChartArea: false },
+      },
       x: { ticks: { color: TICK_COLOR, font: { family: "Vazirmatn" }, maxRotation: 0, autoSkipPadding: 12 }, grid: { color: GRID_COLOR } },
     },
     plugins: {
+      // "right" made sense with 4-5 series; combining price and travel-time
+      // onto one chart roughly doubles that, and a narrow vertical legend
+      // column truncates long labels regardless of how wide the chart
+      // itself is (confirmed against real data before this fix -- widening
+      // the whole page didn't help, only moving the legend did). "bottom"
+      // wraps across the chart's full width instead.
       legend: {
-        position: "right",
+        position: "bottom",
         labels: {
           color: "#eef1f5",
           usePointStyle: true,
@@ -689,9 +703,7 @@ function chartOptions(group, resetBtnId, yTickCallback) {
           label: (ctx) => {
             const v = ctx.parsed.y;
             if (v == null) return null;
-            const shown = yTickCallback
-              ? yTickCallback(Math.round(v))
-              : `${Math.round(v).toLocaleString("fa-IR")} تومان`;
+            const shown = ctx.dataset.yAxisID === "y1" ? formatMinutes(v) : formatToman(v);
             return `${ctx.dataset.label}: ${shown}`;
           },
         },
@@ -705,14 +717,16 @@ function chartOptions(group, resetBtnId, yTickCallback) {
             borderWidth: 1,
           },
           mode: "x",
-          onZoomComplete: ({ chart: c }) => syncGroupZoom(group, c),
+          onZoomComplete: ({ chart: c }) => {
+            document.getElementById(resetBtnId).hidden = !c.isZoomedOrPanned();
+          },
         },
       },
     },
   };
 }
 
-function lineDatasets(series) {
+function lineDatasets(series, yAxisID) {
   const ordByProvider = {};
   return Array.from(series.entries()).map(([label, points], i) => {
     const base = colorForLabel(label, i);
@@ -722,6 +736,7 @@ function lineDatasets(series) {
     return {
       label,
       data: points,
+      yAxisID,
       borderColor: color,
       backgroundColor: color,
       borderWidth: 2,
@@ -748,24 +763,41 @@ function selectedJob() {
   return state.jobs.find((j) => j.id === state.selectedJobId) || null;
 }
 
-// Turn a flat list of rows into aligned {labels, datasets}, one label per
-// distinct formatted timestamp and one dataset per series key.
-function timeSeries(rows, keyFn, valueFn) {
+// Combines one or more row sets (e.g. price rows + travel-time rows) onto
+// one shared timestamp axis, each contributing its own series on its own
+// y axis -- e.g. {rows: priceRows, keyFn, valueFn, yAxisID: "y"} and
+// {rows: travelRows, ..., yAxisID: "y1"} for a chart plotting both at once.
+// Price and travel-time poll on different schedules (see scheduler.py), so
+// their timestamps don't line up -- rows from every group are merged and
+// sorted chronologically first so labels land in true time order (the
+// single-group case just has nothing to interleave with).
+function combinedTimeSeries(groups) {
+  const tagged = [];
+  groups.forEach((g, gi) => {
+    for (const row of g.rows) tagged.push({ row, gi });
+  });
+  tagged.sort((a, b) => new Date(a.row.checked_at) - new Date(b.row.checked_at));
+
   const labelsSet = new Set();
-  const series = new Map();
-  for (const row of rows) {
+  const seriesByGroup = groups.map(() => new Map());
+  for (const { row, gi } of tagged) {
     const label = formatTime(row.checked_at);
     labelsSet.add(label);
-    const key = keyFn(row);
-    if (!series.has(key)) series.set(key, new Map());
-    series.get(key).set(label, valueFn(row));
+    const g = groups[gi];
+    const key = g.keyFn(row);
+    if (!seriesByGroup[gi].has(key)) seriesByGroup[gi].set(key, new Map());
+    seriesByGroup[gi].get(key).set(label, g.valueFn(row));
   }
+
   const labels = Array.from(labelsSet);
-  const aligned = new Map();
-  for (const [key, points] of series) {
-    aligned.set(key, labels.map((l) => (points.has(l) ? points.get(l) : null)));
-  }
-  return { labels, datasets: lineDatasets(aligned) };
+  const datasets = groups.flatMap((g, gi) => {
+    const aligned = new Map();
+    for (const [key, points] of seriesByGroup[gi]) {
+      aligned.set(key, labels.map((l) => (points.has(l) ? points.get(l) : null)));
+    }
+    return lineDatasets(aligned, g.yAxisID);
+  });
+  return { labels, datasets };
 }
 
 const currentHours = () => document.getElementById("range-select").value;
@@ -796,10 +828,13 @@ async function loadChart() {
   }
   noJobMsg.hidden = true;
 
-  const rows = await fetchJson(`/api/jobs/${job.id}/prices?hours=${currentHours()}`);
-  if (rows == null || job.id !== state.selectedJobId) return;
+  const [priceRows, travelRows] = await Promise.all([
+    fetchJson(`/api/jobs/${job.id}/prices?hours=${currentHours()}`),
+    fetchJson(`/api/jobs/${job.id}/travel-times?hours=${currentHours()}`),
+  ]);
+  if (priceRows == null || travelRows == null || job.id !== state.selectedJobId) return;
 
-  if (rows.length === 0) {
+  if (priceRows.length === 0 && travelRows.length === 0) {
     chart = destroyChart(chart);
     noDataMsg.hidden = false;
     canvas.hidden = true;
@@ -808,57 +843,25 @@ async function loadChart() {
   noDataMsg.hidden = true;
   canvas.hidden = false;
 
-  const { labels, datasets } = timeSeries(
-    rows,
-    (r) => `${PROVIDER_LABELS[r.provider] || r.provider} — ${r.service_name}`,
-    (r) => r.price,
-  );
+  const { labels, datasets } = combinedTimeSeries([
+    {
+      rows: priceRows,
+      keyFn: (r) => `${PROVIDER_LABELS[r.provider] || r.provider} — ${r.service_name}`,
+      valueFn: (r) => r.price,
+      yAxisID: "y",
+    },
+    {
+      rows: travelRows,
+      keyFn: (r) => MODE_LABELS[r.mode] || r.mode,
+      valueFn: (r) => r.duration_seconds / 60,
+      yAxisID: "y1",
+    },
+  ]);
 
   chart = renderChart(chart, canvas, {
     type: "line",
     data: { labels, datasets },
-    options: chartOptions("timeline", "price-chart-reset", formatToman),
-  });
-}
-
-async function loadTravelChart() {
-  const job = selectedJob();
-  const canvas = document.getElementById("travel-chart");
-  const noDataMsg = document.getElementById("travel-no-data-msg");
-  // The price and travel charts share one panel and one "no job" message.
-  const noJobMsg = document.getElementById("no-job-msg");
-
-  if (!job) {
-    travelChart = destroyChart(travelChart);
-    canvas.hidden = true;
-    noDataMsg.hidden = true;
-    noJobMsg.hidden = false;
-    return;
-  }
-  noJobMsg.hidden = true;
-
-  const rows = await fetchJson(`/api/jobs/${job.id}/travel-times?hours=${currentHours()}`);
-  if (rows == null || job.id !== state.selectedJobId) return;
-
-  if (rows.length === 0) {
-    travelChart = destroyChart(travelChart);
-    noDataMsg.hidden = false;
-    canvas.hidden = true;
-    return;
-  }
-  noDataMsg.hidden = true;
-  canvas.hidden = false;
-
-  const { labels, datasets } = timeSeries(
-    rows,
-    (r) => MODE_LABELS[r.mode] || r.mode,
-    (r) => r.duration_seconds / 60,
-  );
-
-  travelChart = renderChart(travelChart, canvas, {
-    type: "line",
-    data: { labels, datasets },
-    options: chartOptions("timeline", "travel-chart-reset", formatMinutes),
+    options: chartOptions("price-chart-reset"),
   });
 }
 
@@ -873,22 +876,29 @@ function todMinutes() {
 
 // For each calendar day in `rows`, keep -- per series -- the single sample
 // whose local clock time is closest to `targetMin` (within tolerance).
-function dailyAtTime(rows, keyFn, valueFn, targetMin) {
-  const days = new Map(); // dayKey -> { date, series: Map<key, {diff, value}> }
-  for (const row of rows) {
-    const d = new Date(row.checked_at);
-    const minute = d.getHours() * 60 + d.getMinutes();
-    let diff = Math.abs(minute - targetMin);
-    diff = Math.min(diff, 1440 - diff); // wrap around midnight
-    if (diff > TOD_TOLERANCE_MIN) continue;
+// Same combine-multiple-row-sets idea as combinedTimeSeries, but for the
+// day-over-day view: one sample per calendar day (whichever is closest to
+// targetMin), independently per group so price and travel-time each keep
+// their own closest-sample-of-the-day logic before landing on the shared
+// per-day x axis.
+function combinedDailyAtTime(groups, targetMin) {
+  const days = new Map(); // dayKey -> { date, seriesByGroup: [Map<key,{diff,value}>, ...] }
+  groups.forEach((g, gi) => {
+    for (const row of g.rows) {
+      const d = new Date(row.checked_at);
+      const minute = d.getHours() * 60 + d.getMinutes();
+      let diff = Math.abs(minute - targetMin);
+      diff = Math.min(diff, 1440 - diff); // wrap around midnight
+      if (diff > TOD_TOLERANCE_MIN) continue;
 
-    const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    if (!days.has(dayKey)) days.set(dayKey, { date: d, series: new Map() });
-    const bucket = days.get(dayKey).series;
-    const key = keyFn(row);
-    const prev = bucket.get(key);
-    if (!prev || diff < prev.diff) bucket.set(key, { diff, value: valueFn(row) });
-  }
+      const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      if (!days.has(dayKey)) days.set(dayKey, { date: d, seriesByGroup: groups.map(() => new Map()) });
+      const bucket = days.get(dayKey).seriesByGroup[gi];
+      const key = g.keyFn(row);
+      const prev = bucket.get(key);
+      if (!prev || diff < prev.diff) bucket.set(key, { diff, value: g.valueFn(row) });
+    }
+  });
 
   const dayKeys = Array.from(days.keys()).sort(
     (a, b) => days.get(a).date - days.get(b).date,
@@ -897,20 +907,23 @@ function dailyAtTime(rows, keyFn, valueFn, targetMin) {
     days.get(k).date.toLocaleDateString("fa-IR", { weekday: "long", day: "numeric", month: "short" }),
   );
 
-  const seriesKeys = new Set();
-  for (const k of dayKeys) for (const s of days.get(k).series.keys()) seriesKeys.add(s);
+  const datasets = groups.flatMap((g, gi) => {
+    const seriesKeys = new Set();
+    for (const k of dayKeys) for (const s of days.get(k).seriesByGroup[gi].keys()) seriesKeys.add(s);
 
-  const aligned = new Map();
-  for (const s of seriesKeys) {
-    aligned.set(
-      s,
-      dayKeys.map((k) => {
-        const hit = days.get(k).series.get(s);
-        return hit ? hit.value : null;
-      }),
-    );
-  }
-  return { labels, datasets: lineDatasets(aligned) };
+    const aligned = new Map();
+    for (const s of seriesKeys) {
+      aligned.set(
+        s,
+        dayKeys.map((k) => {
+          const hit = days.get(k).seriesByGroup[gi].get(s);
+          return hit ? hit.value : null;
+        }),
+      );
+    }
+    return lineDatasets(aligned, g.yAxisID);
+  });
+  return { labels, datasets };
 }
 
 async function loadByDayCharts() {
@@ -918,18 +931,13 @@ async function loadByDayCharts() {
   const noJobMsg = document.getElementById("by-day-no-job-msg");
   document.getElementById("by-day-job-name").textContent = job ? job.name : "—";
 
-  const priceCanvas = document.getElementById("price-by-day-chart");
-  const travelCanvas = document.getElementById("travel-by-day-chart");
-  const priceNoData = document.getElementById("price-by-day-no-data");
-  const travelNoData = document.getElementById("travel-by-day-no-data");
+  const canvas = document.getElementById("price-by-day-chart");
+  const noData = document.getElementById("price-by-day-no-data");
 
   if (!job) {
-    priceByDayChart = destroyChart(priceByDayChart);
-    travelByDayChart = destroyChart(travelByDayChart);
-    priceCanvas.hidden = true;
-    travelCanvas.hidden = true;
-    priceNoData.hidden = true;
-    travelNoData.hidden = true;
+    dayChart = destroyChart(dayChart);
+    canvas.hidden = true;
+    noData.hidden = true;
     noJobMsg.hidden = false;
     return;
   }
@@ -943,121 +951,73 @@ async function loadByDayCharts() {
     fetchJson(`/api/jobs/${job.id}/prices?hours=${hours}`),
     fetchJson(`/api/jobs/${job.id}/travel-times?hours=${hours}`),
   ]);
-  if (job.id !== state.selectedJobId) return;
+  if (priceRows == null || travelRows == null || job.id !== state.selectedJobId) return;
 
-  if (priceRows != null) {
-    const { labels, datasets } = dailyAtTime(
-      priceRows,
-      (r) => `${PROVIDER_LABELS[r.provider] || r.provider} — ${r.service_name}`,
-      (r) => r.price,
-      targetMin,
-    );
-    if (labels.length === 0) {
-      priceByDayChart = destroyChart(priceByDayChart);
-      priceNoData.hidden = false;
-      priceCanvas.hidden = true;
-    } else {
-      priceNoData.hidden = true;
-      priceCanvas.hidden = false;
-      priceByDayChart = renderChart(priceByDayChart, priceCanvas, {
-        type: "line",
-        data: { labels, datasets },
-        options: chartOptions("daily", "price-by-day-reset", formatToman),
-      });
-    }
-  }
+  const { labels, datasets } = combinedDailyAtTime(
+    [
+      {
+        rows: priceRows,
+        keyFn: (r) => `${PROVIDER_LABELS[r.provider] || r.provider} — ${r.service_name}`,
+        valueFn: (r) => r.price,
+        yAxisID: "y",
+      },
+      {
+        rows: travelRows,
+        keyFn: (r) => MODE_LABELS[r.mode] || r.mode,
+        valueFn: (r) => r.duration_seconds / 60,
+        yAxisID: "y1",
+      },
+    ],
+    targetMin,
+  );
 
-  if (travelRows != null) {
-    const { labels, datasets } = dailyAtTime(
-      travelRows,
-      (r) => MODE_LABELS[r.mode] || r.mode,
-      (r) => r.duration_seconds / 60,
-      targetMin,
-    );
-    if (labels.length === 0) {
-      travelByDayChart = destroyChart(travelByDayChart);
-      travelNoData.hidden = false;
-      travelCanvas.hidden = true;
-    } else {
-      travelNoData.hidden = true;
-      travelCanvas.hidden = false;
-      travelByDayChart = renderChart(travelByDayChart, travelCanvas, {
-        type: "line",
-        data: { labels, datasets },
-        options: chartOptions("daily", "travel-by-day-reset", formatMinutes),
-      });
-    }
+  if (labels.length === 0) {
+    dayChart = destroyChart(dayChart);
+    noData.hidden = false;
+    canvas.hidden = true;
+  } else {
+    noData.hidden = true;
+    canvas.hidden = false;
+    dayChart = renderChart(dayChart, canvas, {
+      type: "line",
+      data: { labels, datasets },
+      options: chartOptions("price-by-day-reset"),
+    });
   }
 }
 
-// ---- linked (grouped) zoom ----
+// ---- zoom reset ----
 //
-// Charts in the same group share an x axis (the "timeline" pair covers the
-// same recent window; the "daily" pair covers the same span of days), so a
-// drag-zoom on any one of them applies the identical x window to the others.
+// Each panel is a single chart now (price and travel-time share one plot),
+// so zoom just applies to that one chart -- no more syncing a pair against
+// each other.
 
-const ZOOM_GROUPS = {
-  timeline: { charts: () => [chart, travelChart], buttons: ["price-chart-reset", "travel-chart-reset"] },
-  daily: { charts: () => [priceByDayChart, travelByDayChart], buttons: ["price-by-day-reset", "travel-by-day-reset"] },
-};
-const BUTTON_GROUP = {
-  "price-chart-reset": "timeline",
-  "travel-chart-reset": "timeline",
-  "price-by-day-reset": "daily",
-  "travel-by-day-reset": "daily",
-};
-
-let syncingZoom = false;
-
-function setGroupResetButtons(group, zoomed) {
-  for (const id of ZOOM_GROUPS[group].buttons) document.getElementById(id).hidden = !zoomed;
-}
-
-// Copy `source`'s current x window onto its group-mates. Both charts in a
-// group are built from the same fetch cycle, so their category indices line
-// up and an index range transfers directly.
-function syncGroupZoom(group, source) {
-  const zoomed = source.isZoomedOrPanned();
-  setGroupResetButtons(group, zoomed);
-  if (syncingZoom) return;
-  syncingZoom = true;
-  try {
-    const { min, max } = source.scales.x;
-    for (const c of ZOOM_GROUPS[group].charts()) {
-      if (!c || c === source) continue;
-      if (zoomed) c.zoomScale("x", { min, max }, "none");
-      else c.resetZoom("none");
-    }
-  } finally {
-    syncingZoom = false;
-  }
-}
-
-function resetGroupZoom(group) {
-  syncingZoom = true;
-  try {
-    for (const c of ZOOM_GROUPS[group].charts()) if (c && c.isZoomedOrPanned()) c.resetZoom();
-  } finally {
-    syncingZoom = false;
-  }
-  setGroupResetButtons(group, false);
-}
+const RESETTABLE_CHARTS = [
+  { chart: () => chart, buttonId: "price-chart-reset" },
+  { chart: () => dayChart, buttonId: "price-by-day-reset" },
+];
 
 function wireZoomResets() {
-  for (const id of Object.keys(BUTTON_GROUP)) {
-    document.getElementById(id).addEventListener("click", () => resetGroupZoom(BUTTON_GROUP[id]));
+  for (const { chart: getChart, buttonId } of RESETTABLE_CHARTS) {
+    document.getElementById(buttonId).addEventListener("click", () => {
+      const c = getChart();
+      if (c) c.resetZoom();
+      document.getElementById(buttonId).hidden = true;
+    });
   }
 }
 
 function resetAllZoom() {
-  resetGroupZoom("timeline");
-  resetGroupZoom("daily");
+  for (const { chart: getChart, buttonId } of RESETTABLE_CHARTS) {
+    const c = getChart();
+    if (c && c.isZoomedOrPanned()) c.resetZoom();
+    document.getElementById(buttonId).hidden = true;
+  }
 }
 
 document.getElementById("range-select").addEventListener("change", () => {
   resetAllZoom();
   loadChart();
-  loadTravelChart();
 });
 
 // <input type="time">'s own displayed digits follow the browser/OS locale,
