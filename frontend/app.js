@@ -277,6 +277,44 @@ function updateNewJobToggle() {
   btn.title = atLimit ? "هر حساب حداکثر ۳ مسیر می‌تونه داشته باشه" : "کار جدید";
 }
 
+// A labeled on/off switch for a job-card action. onToggle receives the
+// desired new state and must resolve to true (applied -- the caller's own
+// loadJobs() re-render, on success, replaces this element anyway) or false
+// (rejected, e.g. the tracking-both-off guard or the 3-job cap) so the
+// switch can be snapped back rather than showing a state the server
+// refused.
+function makeSwitchRow(iconSvg, labelText, checked, onToggle, title) {
+  const row = document.createElement("label");
+  row.className = "switch-row";
+  if (title) row.title = title;
+  row.addEventListener("click", (e) => e.stopPropagation());
+
+  const labelSpan = document.createElement("span");
+  labelSpan.className = "switch-label";
+  labelSpan.innerHTML = iconSvg + labelText;
+
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = checked;
+  input.addEventListener("change", async () => {
+    const desired = input.checked;
+    input.disabled = true;
+    const ok = await onToggle(desired);
+    if (!ok) input.checked = !desired;
+    input.disabled = false;
+  });
+
+  const slider = document.createElement("span");
+  slider.className = "switch-slider";
+
+  const switchWrap = document.createElement("span");
+  switchWrap.className = "switch";
+  switchWrap.append(input, slider);
+
+  row.append(labelSpan, switchWrap);
+  return row;
+}
+
 function renderJobs() {
   renderJobsErrorBanner();
   renderJobsSummary();
@@ -322,14 +360,6 @@ function renderJobs() {
     badge.className = `status-badge status-${job.status}`;
     badge.textContent = STATUS_LABELS[job.status] || job.status;
 
-    const toggleBtn = document.createElement("button");
-    toggleBtn.className = "job-btn";
-    toggleBtn.innerHTML = ICONS.power + (job.active ? "غیرفعال کردن" : "فعال کردن");
-    toggleBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleJobActive(job);
-    });
-
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "job-btn job-btn-danger";
     deleteBtn.innerHTML =
@@ -341,43 +371,28 @@ function renderJobs() {
 
     const actions = document.createElement("div");
     actions.className = "job-actions";
-    actions.append(badge, toggleBtn);
+    actions.append(badge);
 
-    const priceBtn = document.createElement("button");
-    priceBtn.className = "job-btn" + (job.track_price ? " job-btn-active" : "");
-    priceBtn.innerHTML = ICONS.tag + (job.track_price ? "قیمت: روشن" : "قیمت: خاموش");
-    priceBtn.title = "پایش قیمت (اسنپ و تپسی) رو روشن/خاموش کن";
-    priceBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleTracking(job, { track_price: !job.track_price });
-    });
+    actions.append(makeSwitchRow(ICONS.power, "فعال", job.active, () => toggleJobActive(job)));
 
-    const travelBtn = document.createElement("button");
-    travelBtn.className = "job-btn" + (job.track_travel_time ? " job-btn-active" : "");
-    travelBtn.innerHTML = ICONS.clock + (job.track_travel_time ? "زمان مسیر: روشن" : "زمان مسیر: خاموش");
-    travelBtn.title = "پایش زمان مسیر (نشان) رو روشن/خاموش کن";
-    travelBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleTracking(job, { track_travel_time: !job.track_travel_time });
-    });
+    actions.append(
+      makeSwitchRow(ICONS.tag, "قیمت", job.track_price, (checked) =>
+        toggleTracking(job, { track_price: checked }), "پایش قیمت (اسنپ و تپسی)"),
+    );
 
-    actions.append(priceBtn, travelBtn);
+    actions.append(
+      makeSwitchRow(ICONS.clock, "زمان مسیر", job.track_travel_time, (checked) =>
+        toggleTracking(job, { track_travel_time: checked }), "پایش زمان مسیر (نشان)"),
+    );
 
     // A return leg's own round-trip state isn't meaningful (it can't have
-    // a return leg of its own) -- only base jobs get this button.
+    // a return leg of its own) -- only base jobs get this switch.
     if (!job.is_return_leg) {
       const roundTripOn = job.round_trip_job_id != null;
-      const roundTripBtn = document.createElement("button");
-      roundTripBtn.className = "job-btn" + (roundTripOn ? " job-btn-active" : "");
-      roundTripBtn.innerHTML = ICONS.swap + (roundTripOn ? "رفت‌وبرگشت: روشن" : "رفت‌وبرگشت: خاموش");
-      roundTripBtn.title = roundTripOn
-        ? "مسیر برگشت هم پایش می‌شه — برای خاموش کردن بزن"
-        : "قیمت مسیر برگشت (مقصد به مبدا) هم پایش بشه";
-      roundTripBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        toggleRoundTrip(job, !roundTripOn);
-      });
-      actions.append(roundTripBtn);
+      actions.append(
+        makeSwitchRow(ICONS.swap, "رفت‌وبرگشت", roundTripOn, (checked) => toggleRoundTrip(job, checked),
+          "قیمت مسیر برگشت (مقصد به مبدا) هم پایش بشه"),
+      );
     }
 
     actions.append(deleteBtn);
@@ -420,16 +435,25 @@ function selectJob(jobId) {
   loadStatus();
 }
 
+// Each of these three returns true (applied) or false (rejected/failed) so
+// the switch that triggered it (see makeSwitchRow) knows whether to snap
+// back to its previous position instead of showing a state the server
+// never actually accepted.
+
 async function toggleJobActive(job) {
   try {
     const resp = await apiFetch(`/api/jobs/${job.id}`, {
       method: "PATCH",
       body: JSON.stringify({ active: !job.active }),
     });
-    if (resp.ok) await loadJobs();
+    if (resp.ok) {
+      await loadJobs();
+      return true;
+    }
   } catch {
     /* transient network failure -- next poll will retry */
   }
+  return false;
 }
 
 async function toggleTracking(job, change) {
@@ -445,17 +469,18 @@ async function toggleTracking(job, change) {
     });
     if (resp.ok) {
       await loadJobs();
-    } else {
-      // Rejected e.g. for turning off the only tracking method left on --
-      // reuses the error banner the same way toggleRoundTrip does.
-      const err = await resp.json().catch(() => ({}));
-      const el = document.getElementById("jobs-error-banner");
-      el.hidden = false;
-      el.textContent = err.detail || "خطا در تغییر پایش.";
+      return true;
     }
+    // Rejected e.g. for turning off the only tracking method left on --
+    // reuses the error banner the same way toggleRoundTrip does.
+    const err = await resp.json().catch(() => ({}));
+    const el = document.getElementById("jobs-error-banner");
+    el.hidden = false;
+    el.textContent = err.detail || "خطا در تغییر پایش.";
   } catch {
     /* transient network failure -- user can retry */
   }
+  return false;
 }
 
 async function toggleRoundTrip(job, enabled) {
@@ -466,18 +491,19 @@ async function toggleRoundTrip(job, enabled) {
     });
     if (resp.ok) {
       await loadJobs();
-    } else {
-      // Reuses the error banner (normally for a job stuck in "error"
-      // status) -- the next render (30s poll, or any other job action)
-      // recomputes it back to normal once this stops being relevant.
-      const err = await resp.json().catch(() => ({}));
-      const el = document.getElementById("jobs-error-banner");
-      el.hidden = false;
-      el.textContent = err.detail || "خطا در تغییر رفت‌وبرگشت.";
+      return true;
     }
+    // Reuses the error banner (normally for a job stuck in "error"
+    // status) -- the next render (30s poll, or any other job action)
+    // recomputes it back to normal once this stops being relevant.
+    const err = await resp.json().catch(() => ({}));
+    const el = document.getElementById("jobs-error-banner");
+    el.hidden = false;
+    el.textContent = err.detail || "خطا در تغییر رفت‌وبرگشت.";
   } catch {
     /* transient network failure -- user can retry */
   }
+  return false;
 }
 
 async function deleteJob(job) {
