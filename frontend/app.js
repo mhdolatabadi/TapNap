@@ -4,6 +4,10 @@ const state = {
   jobs: [],
   selectedJobId: null,
   pendingDeleteId: null,
+  // Which job cards currently have their settings (price/travel-time/
+  // round-trip switches) panel expanded -- kept outside renderJobs() so a
+  // card the user has open stays open across the 30s poll's re-render.
+  openSettingsIds: new Set(),
 };
 
 // Small hand-drawn outline icons (no external icon font -- this app already
@@ -30,6 +34,8 @@ const ICONS = {
     '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M3 11h18"/></svg>',
   pulse:
     '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 8 4-16 2 8h6"/></svg>',
+  settings:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
 };
 
 function apiFetch(url, options = {}) {
@@ -331,6 +337,9 @@ function renderJobs() {
     card.dataset.jobId = job.id;
     card.style.setProperty("--card-status", STATUS_COLORS[job.status] || "#2a303c");
 
+    const cardTop = document.createElement("div");
+    cardTop.className = "job-card-top";
+
     const info = document.createElement("div");
     info.className = "job-info";
     const returnTag = job.is_return_leg
@@ -369,18 +378,27 @@ function renderJobs() {
       deleteJob(job);
     });
 
-    const actions = document.createElement("div");
-    actions.className = "job-actions";
-    actions.append(badge);
+    // Settings panel: the three "what should this route poll" switches --
+    // configured once and rarely touched again, so they're tucked behind
+    // the gear button below rather than sitting in the always-visible row
+    // alongside فعال/حذف.
+    const settingsOpen = state.openSettingsIds.has(job.id);
 
-    actions.append(makeSwitchRow(ICONS.power, "فعال", job.active, () => toggleJobActive(job)));
+    const settingsPanel = document.createElement("div");
+    settingsPanel.className = "job-settings";
+    settingsPanel.hidden = !settingsOpen;
 
-    actions.append(
+    const settingsLabel = document.createElement("span");
+    settingsLabel.className = "job-settings-label";
+    settingsLabel.textContent = "این مسیر چی رو پایش کنه";
+    settingsPanel.append(settingsLabel);
+
+    settingsPanel.append(
       makeSwitchRow(ICONS.tag, "قیمت", job.track_price, (checked) =>
         toggleTracking(job, { track_price: checked }), "پایش قیمت (اسنپ و تپسی)"),
     );
 
-    actions.append(
+    settingsPanel.append(
       makeSwitchRow(ICONS.clock, "زمان مسیر", job.track_travel_time, (checked) =>
         toggleTracking(job, { track_travel_time: checked }), "پایش زمان مسیر (نشان)"),
     );
@@ -389,15 +407,36 @@ function renderJobs() {
     // a return leg of its own) -- only base jobs get this switch.
     if (!job.is_return_leg) {
       const roundTripOn = job.round_trip_job_id != null;
-      actions.append(
+      settingsPanel.append(
         makeSwitchRow(ICONS.swap, "رفت‌وبرگشت", roundTripOn, (checked) => toggleRoundTrip(job, checked),
           "قیمت مسیر برگشت (مقصد به مبدا) هم پایش بشه"),
       );
     }
 
-    actions.append(deleteBtn);
+    const settingsToggle = document.createElement("button");
+    settingsToggle.className = "job-settings-toggle" + (settingsOpen ? " open" : "");
+    settingsToggle.title = "تنظیمات پایش";
+    settingsToggle.innerHTML = ICONS.settings;
+    settingsToggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const nowOpen = settingsPanel.hidden; // about to toggle
+      settingsPanel.hidden = !nowOpen;
+      settingsToggle.classList.toggle("open", nowOpen);
+      if (nowOpen) state.openSettingsIds.add(job.id);
+      else state.openSettingsIds.delete(job.id);
+    });
 
-    card.append(info, actions);
+    const actions = document.createElement("div");
+    actions.className = "job-actions";
+    actions.append(
+      badge,
+      makeSwitchRow(ICONS.power, "فعال", job.active, () => toggleJobActive(job)),
+      settingsToggle,
+      deleteBtn,
+    );
+
+    cardTop.append(info, actions);
+    card.append(cardTop, settingsPanel);
     el.appendChild(card);
   }
 }
