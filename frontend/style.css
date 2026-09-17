@@ -512,6 +512,22 @@ input[type="time"] {
   margin-bottom: 10px;
 }
 
+.track-options {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.track-options label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
 #jobs-list {
   display: flex;
   flex-direction: column;
@@ -637,6 +653,16 @@ input[type="time"] {
 .job-btn-danger {
   border-color: color-mix(in srgb, var(--danger) 55%, transparent);
   color: var(--danger);
+}
+
+.job-btn-active {
+  border-color: color-mix(in srgb, var(--ok) 55%, transparent);
+  color: var(--ok);
+}
+
+.job-return-tag {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .status-badge {

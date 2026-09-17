@@ -73,8 +73,14 @@ document.getElementById("new-job-toggle").addEventListener("click", () => {
   else hideNewJobPanel();
 });
 
-document.getElementById("cancel-job").addEventListener("click", () => {
+function resetNewJobForm() {
   document.getElementById("job-name").value = "";
+  document.getElementById("track-price").checked = true;
+  document.getElementById("track-travel-time").checked = true;
+}
+
+document.getElementById("cancel-job").addEventListener("click", () => {
+  resetNewJobForm();
   document.getElementById("save-status").textContent = "";
   hideNewJobPanel();
 });
@@ -107,6 +113,8 @@ document.getElementById("save-job").addEventListener("click", async () => {
   const statusEl = document.getElementById("save-status");
   const name = document.getElementById("job-name").value.trim();
   const { origin, destination } = state.newJobRoute;
+  const trackPrice = document.getElementById("track-price").checked;
+  const trackTravelTime = document.getElementById("track-travel-time").checked;
   if (!name) {
     statusEl.textContent = "اول یک اسم برای کار بذار.";
     return;
@@ -115,16 +123,23 @@ document.getElementById("save-job").addEventListener("click", async () => {
     statusEl.textContent = "مبدا و مقصد رو روی نقشه مشخص کن.";
     return;
   }
+  if (!trackPrice && !trackTravelTime) {
+    statusEl.textContent = "حداقل یکی از قیمت یا زمان مسیر رو انتخاب کن.";
+    return;
+  }
   statusEl.textContent = "در حال افزودن…";
   try {
     const resp = await apiFetch("/api/jobs", {
       method: "POST",
-      body: JSON.stringify({ name, origin, destination }),
+      body: JSON.stringify({
+        name, origin, destination,
+        track_price: trackPrice, track_travel_time: trackTravelTime,
+      }),
     });
     if (resp.ok) {
       const job = await resp.json();
       statusEl.textContent = "اضافه شد ✓";
-      document.getElementById("job-name").value = "";
+      resetNewJobForm();
       state.selectedJobId = job.id;
       hideNewJobPanel();
       await loadJobs();
@@ -254,9 +269,12 @@ function renderJobs() {
 
     const info = document.createElement("div");
     info.className = "job-info";
+    const returnTag = job.is_return_leg
+      ? `<span class="job-return-tag">برگشتِ یک مسیر دیگه</span>`
+      : "";
     info.innerHTML = `
       <div class="job-name">${job.name}</div>
-      <div class="job-route">${jobRouteText(job)}</div>
+      <div class="job-route">${jobRouteText(job)} ${returnTag}</div>
     `;
     const snapshot = priceSnapshot(job);
     if (snapshot) {
@@ -296,7 +314,46 @@ function renderJobs() {
 
     const actions = document.createElement("div");
     actions.className = "job-actions";
-    actions.append(badge, toggleBtn, deleteBtn);
+    actions.append(badge, toggleBtn);
+
+    const priceBtn = document.createElement("button");
+    priceBtn.className = "job-btn" + (job.track_price ? " job-btn-active" : "");
+    priceBtn.textContent = job.track_price ? "قیمت: روشن" : "قیمت: خاموش";
+    priceBtn.title = "پایش قیمت (اسنپ و تپسی) رو روشن/خاموش کن";
+    priceBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleTracking(job, { track_price: !job.track_price });
+    });
+
+    const travelBtn = document.createElement("button");
+    travelBtn.className = "job-btn" + (job.track_travel_time ? " job-btn-active" : "");
+    travelBtn.textContent = job.track_travel_time ? "زمان مسیر: روشن" : "زمان مسیر: خاموش";
+    travelBtn.title = "پایش زمان مسیر (نشان) رو روشن/خاموش کن";
+    travelBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleTracking(job, { track_travel_time: !job.track_travel_time });
+    });
+
+    actions.append(priceBtn, travelBtn);
+
+    // A return leg's own round-trip state isn't meaningful (it can't have
+    // a return leg of its own) -- only base jobs get this button.
+    if (!job.is_return_leg) {
+      const roundTripOn = job.round_trip_job_id != null;
+      const roundTripBtn = document.createElement("button");
+      roundTripBtn.className = "job-btn" + (roundTripOn ? " job-btn-active" : "");
+      roundTripBtn.textContent = roundTripOn ? "رفت‌وبرگشت: روشن" : "رفت‌وبرگشت: خاموش";
+      roundTripBtn.title = roundTripOn
+        ? "مسیر برگشت هم پایش می‌شه — برای خاموش کردن بزن"
+        : "قیمت مسیر برگشت (مقصد به مبدا) هم پایش بشه";
+      roundTripBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleRoundTrip(job, !roundTripOn);
+      });
+      actions.append(roundTripBtn);
+    }
+
+    actions.append(deleteBtn);
 
     card.append(info, actions);
     el.appendChild(card);
@@ -345,6 +402,54 @@ async function toggleJobActive(job) {
     if (resp.ok) await loadJobs();
   } catch {
     /* transient network failure -- next poll will retry */
+  }
+}
+
+async function toggleTracking(job, change) {
+  const body = {
+    track_price: job.track_price,
+    track_travel_time: job.track_travel_time,
+    ...change,
+  };
+  try {
+    const resp = await apiFetch(`/api/jobs/${job.id}/tracking`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    if (resp.ok) {
+      await loadJobs();
+    } else {
+      // Rejected e.g. for turning off the only tracking method left on --
+      // reuses the error banner the same way toggleRoundTrip does.
+      const err = await resp.json().catch(() => ({}));
+      const el = document.getElementById("jobs-error-banner");
+      el.hidden = false;
+      el.textContent = err.detail || "خطا در تغییر پایش.";
+    }
+  } catch {
+    /* transient network failure -- user can retry */
+  }
+}
+
+async function toggleRoundTrip(job, enabled) {
+  try {
+    const resp = await apiFetch(`/api/jobs/${job.id}/round-trip`, {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    });
+    if (resp.ok) {
+      await loadJobs();
+    } else {
+      // Reuses the error banner (normally for a job stuck in "error"
+      // status) -- the next render (30s poll, or any other job action)
+      // recomputes it back to normal once this stops being relevant.
+      const err = await resp.json().catch(() => ({}));
+      const el = document.getElementById("jobs-error-banner");
+      el.hidden = false;
+      el.textContent = err.detail || "خطا در تغییر رفت‌وبرگشت.";
+    }
+  } catch {
+    /* transient network failure -- user can retry */
   }
 }
 

@@ -21,34 +21,36 @@ def fetch_and_store():
         job_id = job["id"]
         origin, destination = job["origin"], job["destination"]
 
-        for name, fetch_fn in PROVIDERS.items():
-            try:
-                results, raw = fetch_fn(origin, destination, creds.get(name, {}))
-            except ProviderAuthError as e:
-                log.warning("%s: auth error: %s", name, e)
-                db.log_fetch(name, job_id, origin, destination, ok=False, message=f"auth: {e}")
-                continue
-            except ProviderError as e:
-                log.warning("%s: error: %s", name, e)
-                db.log_fetch(name, job_id, origin, destination, ok=False, message=str(e))
-                continue
-            except Exception as e:  # keep the loop alive no matter what
-                log.exception("%s: unexpected error", name)
-                db.log_fetch(name, job_id, origin, destination, ok=False, message=f"unexpected: {e}")
-                continue
+        if job["track_price"]:
+            for name, fetch_fn in PROVIDERS.items():
+                try:
+                    results, raw = fetch_fn(origin, destination, creds.get(name, {}))
+                except ProviderAuthError as e:
+                    log.warning("%s: auth error: %s", name, e)
+                    db.log_fetch(name, job_id, origin, destination, ok=False, message=f"auth: {e}")
+                    continue
+                except ProviderError as e:
+                    log.warning("%s: error: %s", name, e)
+                    db.log_fetch(name, job_id, origin, destination, ok=False, message=str(e))
+                    continue
+                except Exception as e:  # keep the loop alive no matter what
+                    log.exception("%s: unexpected error", name)
+                    db.log_fetch(name, job_id, origin, destination, ok=False, message=f"unexpected: {e}")
+                    continue
 
-            for r in results:
-                db.insert_price(name, job_id, origin, destination, r["service_name"], r["price"], raw)
+                for r in results:
+                    db.insert_price(name, job_id, origin, destination, r["service_name"], r["price"], raw)
 
-            if results:
-                db.log_fetch(name, job_id, origin, destination, ok=True, message=f"{len(results)} service(s)")
-            else:
-                db.log_fetch(
-                    name, job_id, origin, destination, ok=True,
-                    message="0 services parsed from response (raw kept)",
-                )
+                if results:
+                    db.log_fetch(name, job_id, origin, destination, ok=True, message=f"{len(results)} service(s)")
+                else:
+                    db.log_fetch(
+                        name, job_id, origin, destination, ok=True,
+                        message="0 services parsed from response (raw kept)",
+                    )
 
-        _fetch_travel_times(job_id, origin, destination)
+        if job["track_travel_time"]:
+            _fetch_travel_times(job_id, origin, destination)
 
 
 def _fetch_travel_times(job_id: int, origin: dict, destination: dict):
