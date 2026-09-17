@@ -22,7 +22,7 @@ import json
 
 import httpx
 
-from .errors import ProviderAuthError, ProviderError
+from .errors import ProviderAuthError, ProviderError, ProviderRateLimited
 
 API_BASE = "https://api.neshan.org/v4/direction"
 
@@ -74,6 +74,11 @@ def fetch_mode(origin: dict, destination: dict, api_key: str, mode: str) -> tupl
 
     if resp.status_code in (401, 403):
         raise ProviderAuthError(f"neshan rejected api key: HTTP {resp.status_code}")
+    if resp.status_code == 429 or resp.status_code == 481:
+        # 481 is Neshan's own "API Key limit exceeded" code -- confirmed
+        # live on the account's key. Distinct from a plain >=400 error so
+        # the scheduler can back off instead of retrying every cycle.
+        raise ProviderRateLimited(f"HTTP {resp.status_code}: {resp.text[:300]}")
     if resp.status_code >= 400:
         raise ProviderError(f"HTTP {resp.status_code}: {resp.text[:500]}")
 
