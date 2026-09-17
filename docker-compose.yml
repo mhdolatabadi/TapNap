@@ -7,6 +7,8 @@ services:
       - FETCH_INTERVAL_MINUTES=10
       - NESHAN_API_KEY=${NESHAN_API_KEY}
       - NESHAN_TRAVEL_MODES=${NESHAN_TRAVEL_MODES:-car,motorcycle}
+      - NESHAN_FETCH_INTERVAL_MINUTES=${NESHAN_FETCH_INTERVAL_MINUTES:-30}
+      - NESHAN_BACKOFF_MINUTES=${NESHAN_BACKOFF_MINUTES:-180}
     volumes:
       - ./data:/app/data
     networks:

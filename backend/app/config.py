@@ -17,6 +17,20 @@ NESHAN_TRAVEL_MODES = [
     m.strip() for m in os.environ.get("NESHAN_TRAVEL_MODES", "car,motorcycle").split(",") if m.strip()
 ]
 
+# Neshan is billed/rate-limited much tighter than Snapp/Tapsi (quota
+# exhaustion seen live: HTTP 481 "API Key limit exceeded") and traffic
+# conditions don't swing as fast as ride-hailing surge prices anyway, so
+# it gets its own, slower polling cadence -- defaults to 3x the price
+# interval (30 min if FETCH_INTERVAL_MINUTES is left at 10) rather than
+# hammering it on every price cycle.
+NESHAN_FETCH_INTERVAL_MINUTES = int(
+    os.environ.get("NESHAN_FETCH_INTERVAL_MINUTES", str(FETCH_INTERVAL_MINUTES * 3))
+)
+
+# Once Neshan says the key's quota is exhausted, stop spending scheduler
+# cycles re-asking (and adding to the overage) until this cooldown passes.
+NESHAN_BACKOFF_MINUTES = int(os.environ.get("NESHAN_BACKOFF_MINUTES", "180"))
+
 # Default route: Azadi Square -> Milad Tower, Tehran
 DEFAULT_ORIGIN = {"lat": 35.6997, "lng": 51.3380, "label": "میدان آزادی"}
 DEFAULT_DESTINATION = {"lat": 35.7448, "lng": 51.3752, "label": "برج میلاد"}
