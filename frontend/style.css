@@ -238,7 +238,41 @@ main {
 
 .panel.span-all { grid-column: 1 / -1; }
 
-/* One tile per row on narrow screens (phones, split windows). */
+/* Two charts sharing one panel (the timeline pair; the day-over-day pair).
+   auto-fit instead of a hard 2-column split: each chart keeps a
+   comfortable minimum width and wraps to its own row once there isn't
+   room for two, rather than both getting squeezed together -- which is
+   what a fixed repeat(2, ...) did regardless of how little space was
+   actually left. container-type lets the divider below react to this
+   grid's own rendered width instead of the viewport's. */
+.chart-grid {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 24px 32px;
+}
+
+.chart-cell + .chart-cell {
+  border-inline-start: 1px solid var(--line);
+  padding-inline-start: 32px;
+  margin-inline-start: -1px;
+}
+
+/* Below the width auto-fit needs to keep two 360px columns (2*360 + the
+   32px gap), it's already stacked -- swap the now-meaningless vertical
+   divider for a horizontal one between the stacked cells. */
+@container (max-width: 759px) {
+  .chart-cell + .chart-cell {
+    border-inline-start: none;
+    padding-inline-start: 0;
+    margin-inline-start: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 20px;
+  }
+}
+
+/* One tile per row on narrow screens (phones, split windows) -- chart-grid
+   handles its own stacking above, so only main's panel columns need this. */
 @media (max-width: 820px) {
   main {
     grid-template-columns: 1fr;
@@ -427,6 +461,19 @@ select {
   height: 320px;
 }
 
+/* Each chart cell stretches to match its row-mate; let the canvas area take
+   up the slack instead of leaving dead space under the chart. */
+.chart-cell {
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-cell .chart-wrap {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 300px;
+}
+
 .chart-wrap > canvas {
   /* No fixed size here -- Chart.js sets this canvas's inline style
      itself (responsive: true) based on .chart-wrap's height above.
@@ -497,6 +544,21 @@ input[type="time"] {
   border-radius: 8px;
   padding: 4px 8px;
   font-family: inherit;
+}
+
+.sub-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 18px 0 8px;
+  gap: 8px;
+}
+
+.sub-h {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
 }
 
 .no-data-msg {
