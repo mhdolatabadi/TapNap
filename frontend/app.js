@@ -6,6 +6,32 @@ const state = {
   pendingDeleteId: null,
 };
 
+// Small hand-drawn outline icons (no external icon font -- this app already
+// vendors its own JS/CSS locally rather than pulling from a CDN). Each is a
+// self-contained, static SVG string (no interpolated data, safe to drop
+// straight into innerHTML) sized via the .icon CSS class (1em square) so it
+// scales with whatever button/heading it sits in.
+const ICONS = {
+  power:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v8"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg>',
+  tag:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 2.6a2 2 0 0 0-1.4-.6H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.8 8.8a2 2 0 0 0 2.8 0l7.2-7.2a2 2 0 0 0 0-2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>',
+  clock:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
+  swap:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3-3"/><path d="M18 7l-3 3"/><path d="M17 17H6l3 3"/><path d="M6 17l3-3"/></svg>',
+  trash:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
+  pin:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12a7 7 0 1 0-14 0c0 4.42 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+  chart:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>',
+  calendar:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M3 11h18"/></svg>',
+  pulse:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 8 4-16 2 8h6"/></svg>',
+};
+
 function apiFetch(url, options = {}) {
   return fetch(url, {
     ...options,
@@ -298,7 +324,7 @@ function renderJobs() {
 
     const toggleBtn = document.createElement("button");
     toggleBtn.className = "job-btn";
-    toggleBtn.textContent = job.active ? "غیرفعال کردن" : "فعال کردن";
+    toggleBtn.innerHTML = ICONS.power + (job.active ? "غیرفعال کردن" : "فعال کردن");
     toggleBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       toggleJobActive(job);
@@ -306,7 +332,8 @@ function renderJobs() {
 
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "job-btn job-btn-danger";
-    deleteBtn.textContent = state.pendingDeleteId === job.id ? "مطمئنی؟ دوباره بزن" : "حذف";
+    deleteBtn.innerHTML =
+      state.pendingDeleteId === job.id ? ICONS.trash + "مطمئنی؟ دوباره بزن" : ICONS.trash + "حذف";
     deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       deleteJob(job);
@@ -318,7 +345,7 @@ function renderJobs() {
 
     const priceBtn = document.createElement("button");
     priceBtn.className = "job-btn" + (job.track_price ? " job-btn-active" : "");
-    priceBtn.textContent = job.track_price ? "قیمت: روشن" : "قیمت: خاموش";
+    priceBtn.innerHTML = ICONS.tag + (job.track_price ? "قیمت: روشن" : "قیمت: خاموش");
     priceBtn.title = "پایش قیمت (اسنپ و تپسی) رو روشن/خاموش کن";
     priceBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -327,7 +354,7 @@ function renderJobs() {
 
     const travelBtn = document.createElement("button");
     travelBtn.className = "job-btn" + (job.track_travel_time ? " job-btn-active" : "");
-    travelBtn.textContent = job.track_travel_time ? "زمان مسیر: روشن" : "زمان مسیر: خاموش";
+    travelBtn.innerHTML = ICONS.clock + (job.track_travel_time ? "زمان مسیر: روشن" : "زمان مسیر: خاموش");
     travelBtn.title = "پایش زمان مسیر (نشان) رو روشن/خاموش کن";
     travelBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -342,7 +369,7 @@ function renderJobs() {
       const roundTripOn = job.round_trip_job_id != null;
       const roundTripBtn = document.createElement("button");
       roundTripBtn.className = "job-btn" + (roundTripOn ? " job-btn-active" : "");
-      roundTripBtn.textContent = roundTripOn ? "رفت‌وبرگشت: روشن" : "رفت‌وبرگشت: خاموش";
+      roundTripBtn.innerHTML = ICONS.swap + (roundTripOn ? "رفت‌وبرگشت: روشن" : "رفت‌وبرگشت: خاموش");
       roundTripBtn.title = roundTripOn
         ? "مسیر برگشت هم پایش می‌شه — برای خاموش کردن بزن"
         : "قیمت مسیر برگشت (مقصد به مبدا) هم پایش بشه";

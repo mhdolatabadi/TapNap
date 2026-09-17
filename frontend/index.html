@@ -13,7 +13,7 @@
   <p class="subtitle">قیمت لحظه‌ای اسنپ و تپسی، برای چند مسیر همزمان</p>
   <div id="account-bar" class="account-bar" hidden>
     <span id="account-email"></span>
-    <button id="logout-btn" class="job-btn">خروج</button>
+    <button id="logout-btn" class="job-btn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>خروج</button>
   </div>
 </header>
 
@@ -37,8 +37,8 @@
 
   <section class="panel span-all" id="jobs-panel" data-app-section>
     <div class="panel-head">
-      <h2>کارهای پایش قیمت</h2>
-      <button id="new-job-toggle" class="icon-btn" title="کار جدید" aria-label="کار جدید">+</button>
+      <h2><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>کارهای پایش قیمت</h2>
+      <button id="new-job-toggle" class="icon-btn" title="کار جدید" aria-label="کار جدید"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
     </div>
     <p id="jobs-error-banner" class="jobs-error-banner" hidden></p>
     <p id="jobs-summary" class="jobs-summary"></p>
@@ -49,14 +49,14 @@
     <div class="panel-head">
       <h2>کار جدید</h2>
       <div class="mode-buttons">
-        <button id="mode-origin" class="mode-btn active" data-mode="origin">تنظیم مبدا</button>
-        <button id="mode-destination" class="mode-btn" data-mode="destination">تنظیم مقصد</button>
+        <button id="mode-origin" class="mode-btn active" data-mode="origin"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--origin)"><path d="M12 22s7-7.58 7-12a7 7 0 1 0-14 0c0 4.42 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>تنظیم مبدا</button>
+        <button id="mode-destination" class="mode-btn" data-mode="destination"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--destination)"><path d="M12 22s7-7.58 7-12a7 7 0 1 0-14 0c0 4.42 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>تنظیم مقصد</button>
       </div>
     </div>
     <input id="job-name" type="text" class="job-name-input" placeholder="نام کار، مثلاً خانه تا شرکت" autocomplete="off">
     <div class="track-options">
-      <label><input type="checkbox" id="track-price" checked> قیمت (اسنپ و تپسی)</label>
-      <label><input type="checkbox" id="track-travel-time" checked> زمان مسیر (نشان)</label>
+      <label><input type="checkbox" id="track-price" checked><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 2.6a2 2 0 0 0-1.4-.6H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.8 8.8a2 2 0 0 0 2.8 0l7.2-7.2a2 2 0 0 0 0-2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>قیمت (اسنپ و تپسی)</label>
+      <label><input type="checkbox" id="track-travel-time" checked><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>زمان مسیر (نشان)</label>
     </div>
     <p class="new-job-hint">روی نقشه کلیک کن یا مارکر رو بکش تا مبدا/مقصد انتخاب‌شده رو تنظیم کنی.</p>
     <div id="map"></div>
@@ -73,7 +73,7 @@
 
   <section class="panel span-all" id="timeline-panel" data-app-section>
     <div class="panel-head">
-      <h2>نمودار لحظه‌ای — <span id="chart-job-name">—</span></h2>
+      <h2><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>نمودار لحظه‌ای — <span id="chart-job-name">—</span></h2>
       <div class="head-controls">
         <select id="range-select">
           <option value="6" selected>۶ ساعت اخیر</option>
@@ -90,7 +90,7 @@
       <div class="chart-cell">
         <div class="sub-head">
           <h3 class="sub-h">قیمت</h3>
-          <button id="price-chart-reset" class="reset-zoom-btn" hidden>بازنشانی بزرگ‌نمایی</button>
+          <button id="price-chart-reset" class="reset-zoom-btn" hidden><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6"/></svg>بازنشانی بزرگ‌نمایی</button>
         </div>
         <div class="chart-wrap"><canvas id="price-chart"></canvas></div>
         <p id="no-data-msg" class="no-data-msg" hidden>هنوز داده‌ای برای قیمت ثبت نشده.</p>
@@ -99,7 +99,7 @@
       <div class="chart-cell">
         <div class="sub-head">
           <h3 class="sub-h">زمان مسیر</h3>
-          <button id="travel-chart-reset" class="reset-zoom-btn" hidden>بازنشانی بزرگ‌نمایی</button>
+          <button id="travel-chart-reset" class="reset-zoom-btn" hidden><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6"/></svg>بازنشانی بزرگ‌نمایی</button>
         </div>
         <div class="chart-wrap"><canvas id="travel-chart"></canvas></div>
         <p id="travel-no-data-msg" class="no-data-msg" hidden>هنوز داده‌ای برای زمان مسیر ثبت نشده.</p>
@@ -111,7 +111,7 @@
 
   <section class="panel span-all" id="by-day-panel" data-app-section>
     <div class="panel-head">
-      <h2>مقایسه روزبه‌روز در ساعت مشخص — <span id="by-day-job-name">—</span></h2>
+      <h2><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M3 11h18"/></svg>مقایسه روزبه‌روز در ساعت مشخص — <span id="by-day-job-name">—</span></h2>
       <div class="head-controls">
         <label class="tod-label">ساعت
           <input id="tod-time" type="time" value="22:00" step="60">
@@ -129,7 +129,7 @@
       <div class="chart-cell">
         <div class="sub-head">
           <h3 class="sub-h">قیمت</h3>
-          <button id="price-by-day-reset" class="reset-zoom-btn" hidden>بازنشانی بزرگ‌نمایی</button>
+          <button id="price-by-day-reset" class="reset-zoom-btn" hidden><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6"/></svg>بازنشانی بزرگ‌نمایی</button>
         </div>
         <div class="chart-wrap"><canvas id="price-by-day-chart"></canvas></div>
         <p id="price-by-day-no-data" class="no-data-msg" hidden>برای این بازه و ساعت داده‌ای پیدا نشد.</p>
@@ -138,7 +138,7 @@
       <div class="chart-cell">
         <div class="sub-head">
           <h3 class="sub-h">زمان مسیر</h3>
-          <button id="travel-by-day-reset" class="reset-zoom-btn" hidden>بازنشانی بزرگ‌نمایی</button>
+          <button id="travel-by-day-reset" class="reset-zoom-btn" hidden><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6"/></svg>بازنشانی بزرگ‌نمایی</button>
         </div>
         <div class="chart-wrap"><canvas id="travel-by-day-chart"></canvas></div>
         <p id="travel-by-day-no-data" class="no-data-msg" hidden>برای این بازه و ساعت داده‌ای پیدا نشد.</p>
@@ -149,7 +149,7 @@
   </section>
 
   <section class="panel span-all" id="status-panel" data-app-section>
-    <h2>وضعیت دریافت — <span id="status-job-name">—</span></h2>
+    <h2><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 8 4-16 2 8h6"/></svg>وضعیت دریافت — <span id="status-job-name">—</span></h2>
     <div id="status-list">در حال بارگذاری…</div>
   </section>
 </main>

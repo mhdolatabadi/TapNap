@@ -245,13 +245,32 @@ main {
   font-size: 15px;
   font-weight: 700;
   color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .panel > h2 { margin-bottom: 12px; }
 
+.panel-head h2 svg,
+.panel > h2 svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
 .mode-buttons {
   display: flex;
   gap: 8px;
+}
+
+/* Every icon in the app is an inline SVG sized off font-size so it scales
+   with its surrounding text instead of needing its own width/height on
+   every use site -- see the ICONS object in app.js. */
+svg.icon {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  vertical-align: -0.15em;
 }
 
 .icon-btn {
@@ -283,6 +302,9 @@ main {
   cursor: pointer;
   font: inherit;
   font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .mode-btn.active {
@@ -421,6 +443,9 @@ select {
   cursor: pointer;
   font: inherit;
   font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .reset-zoom-btn:hover { border-color: var(--muted); }
@@ -646,6 +671,9 @@ input[type="time"] {
   cursor: pointer;
   font: inherit;
   font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .job-btn:hover { border-color: var(--muted); }
