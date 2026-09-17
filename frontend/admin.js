@@ -25,11 +25,13 @@ function showGate(message) {
   document.getElementById("admin-gate").hidden = false;
   document.getElementById("admin-users-panel").hidden = true;
   document.getElementById("admin-gate-status").textContent = message || "";
+  document.body.classList.add("auth-mode");
 }
 
 function showPanel() {
   document.getElementById("admin-gate").hidden = true;
   document.getElementById("admin-users-panel").hidden = false;
+  document.body.classList.remove("auth-mode");
 }
 
 function renderPending(users) {

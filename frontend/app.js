@@ -4,6 +4,38 @@ const state = {
   jobs: [],
   selectedJobId: null,
   pendingDeleteId: null,
+  // Which job cards currently have their settings (price/travel-time/
+  // round-trip switches) panel expanded -- kept outside renderJobs() so a
+  // card the user has open stays open across the 30s poll's re-render.
+  openSettingsIds: new Set(),
+};
+
+// Small hand-drawn outline icons (no external icon font -- this app already
+// vendors its own JS/CSS locally rather than pulling from a CDN). Each is a
+// self-contained, static SVG string (no interpolated data, safe to drop
+// straight into innerHTML) sized via the .icon CSS class (1em square) so it
+// scales with whatever button/heading it sits in.
+const ICONS = {
+  power:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v8"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg>',
+  tag:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 2.6a2 2 0 0 0-1.4-.6H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.8 8.8a2 2 0 0 0 2.8 0l7.2-7.2a2 2 0 0 0 0-2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>',
+  clock:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
+  swap:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3-3"/><path d="M18 7l-3 3"/><path d="M17 17H6l3 3"/><path d="M6 17l3-3"/></svg>',
+  trash:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
+  pin:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12a7 7 0 1 0-14 0c0 4.42 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+  chart:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>',
+  calendar:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M3 11h18"/></svg>',
+  pulse:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 8 4-16 2 8h6"/></svg>',
+  settings:
+    '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
 };
 
 function apiFetch(url, options = {}) {
@@ -251,6 +283,44 @@ function updateNewJobToggle() {
   btn.title = atLimit ? "هر حساب حداکثر ۳ مسیر می‌تونه داشته باشه" : "کار جدید";
 }
 
+// A labeled on/off switch for a job-card action. onToggle receives the
+// desired new state and must resolve to true (applied -- the caller's own
+// loadJobs() re-render, on success, replaces this element anyway) or false
+// (rejected, e.g. the tracking-both-off guard or the 3-job cap) so the
+// switch can be snapped back rather than showing a state the server
+// refused.
+function makeSwitchRow(iconSvg, labelText, checked, onToggle, title) {
+  const row = document.createElement("label");
+  row.className = "switch-row";
+  if (title) row.title = title;
+  row.addEventListener("click", (e) => e.stopPropagation());
+
+  const labelSpan = document.createElement("span");
+  labelSpan.className = "switch-label";
+  labelSpan.innerHTML = iconSvg + labelText;
+
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = checked;
+  input.addEventListener("change", async () => {
+    const desired = input.checked;
+    input.disabled = true;
+    const ok = await onToggle(desired);
+    if (!ok) input.checked = !desired;
+    input.disabled = false;
+  });
+
+  const slider = document.createElement("span");
+  slider.className = "switch-slider";
+
+  const switchWrap = document.createElement("span");
+  switchWrap.className = "switch";
+  switchWrap.append(input, slider);
+
+  row.append(labelSpan, switchWrap);
+  return row;
+}
+
 function renderJobs() {
   renderJobsErrorBanner();
   renderJobsSummary();
@@ -266,6 +336,9 @@ function renderJobs() {
     card.className = "job-card" + (job.id === state.selectedJobId ? " selected" : "");
     card.dataset.jobId = job.id;
     card.style.setProperty("--card-status", STATUS_COLORS[job.status] || "#2a303c");
+
+    const cardTop = document.createElement("div");
+    cardTop.className = "job-card-top";
 
     const info = document.createElement("div");
     info.className = "job-info";
@@ -296,66 +369,74 @@ function renderJobs() {
     badge.className = `status-badge status-${job.status}`;
     badge.textContent = STATUS_LABELS[job.status] || job.status;
 
-    const toggleBtn = document.createElement("button");
-    toggleBtn.className = "job-btn";
-    toggleBtn.textContent = job.active ? "غیرفعال کردن" : "فعال کردن";
-    toggleBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleJobActive(job);
-    });
-
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "job-btn job-btn-danger";
-    deleteBtn.textContent = state.pendingDeleteId === job.id ? "مطمئنی؟ دوباره بزن" : "حذف";
+    deleteBtn.innerHTML =
+      state.pendingDeleteId === job.id ? ICONS.trash + "مطمئنی؟ دوباره بزن" : ICONS.trash + "حذف";
     deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       deleteJob(job);
     });
 
-    const actions = document.createElement("div");
-    actions.className = "job-actions";
-    actions.append(badge, toggleBtn);
+    // Settings panel: the three "what should this route poll" switches --
+    // configured once and rarely touched again, so they're tucked behind
+    // the gear button below rather than sitting in the always-visible row
+    // alongside فعال/حذف.
+    const settingsOpen = state.openSettingsIds.has(job.id);
 
-    const priceBtn = document.createElement("button");
-    priceBtn.className = "job-btn" + (job.track_price ? " job-btn-active" : "");
-    priceBtn.textContent = job.track_price ? "قیمت: روشن" : "قیمت: خاموش";
-    priceBtn.title = "پایش قیمت (اسنپ و تپسی) رو روشن/خاموش کن";
-    priceBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleTracking(job, { track_price: !job.track_price });
-    });
+    const settingsPanel = document.createElement("div");
+    settingsPanel.className = "job-settings";
+    settingsPanel.hidden = !settingsOpen;
 
-    const travelBtn = document.createElement("button");
-    travelBtn.className = "job-btn" + (job.track_travel_time ? " job-btn-active" : "");
-    travelBtn.textContent = job.track_travel_time ? "زمان مسیر: روشن" : "زمان مسیر: خاموش";
-    travelBtn.title = "پایش زمان مسیر (نشان) رو روشن/خاموش کن";
-    travelBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleTracking(job, { track_travel_time: !job.track_travel_time });
-    });
+    const settingsLabel = document.createElement("span");
+    settingsLabel.className = "job-settings-label";
+    settingsLabel.textContent = "این مسیر چی رو پایش کنه";
+    settingsPanel.append(settingsLabel);
 
-    actions.append(priceBtn, travelBtn);
+    settingsPanel.append(
+      makeSwitchRow(ICONS.tag, "قیمت", job.track_price, (checked) =>
+        toggleTracking(job, { track_price: checked }), "پایش قیمت (اسنپ و تپسی)"),
+    );
+
+    settingsPanel.append(
+      makeSwitchRow(ICONS.clock, "زمان مسیر", job.track_travel_time, (checked) =>
+        toggleTracking(job, { track_travel_time: checked }), "پایش زمان مسیر (نشان)"),
+    );
 
     // A return leg's own round-trip state isn't meaningful (it can't have
-    // a return leg of its own) -- only base jobs get this button.
+    // a return leg of its own) -- only base jobs get this switch.
     if (!job.is_return_leg) {
       const roundTripOn = job.round_trip_job_id != null;
-      const roundTripBtn = document.createElement("button");
-      roundTripBtn.className = "job-btn" + (roundTripOn ? " job-btn-active" : "");
-      roundTripBtn.textContent = roundTripOn ? "رفت‌وبرگشت: روشن" : "رفت‌وبرگشت: خاموش";
-      roundTripBtn.title = roundTripOn
-        ? "مسیر برگشت هم پایش می‌شه — برای خاموش کردن بزن"
-        : "قیمت مسیر برگشت (مقصد به مبدا) هم پایش بشه";
-      roundTripBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        toggleRoundTrip(job, !roundTripOn);
-      });
-      actions.append(roundTripBtn);
+      settingsPanel.append(
+        makeSwitchRow(ICONS.swap, "رفت‌وبرگشت", roundTripOn, (checked) => toggleRoundTrip(job, checked),
+          "قیمت مسیر برگشت (مقصد به مبدا) هم پایش بشه"),
+      );
     }
 
-    actions.append(deleteBtn);
+    const settingsToggle = document.createElement("button");
+    settingsToggle.className = "job-settings-toggle" + (settingsOpen ? " open" : "");
+    settingsToggle.title = "تنظیمات پایش";
+    settingsToggle.innerHTML = ICONS.settings;
+    settingsToggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const nowOpen = settingsPanel.hidden; // about to toggle
+      settingsPanel.hidden = !nowOpen;
+      settingsToggle.classList.toggle("open", nowOpen);
+      if (nowOpen) state.openSettingsIds.add(job.id);
+      else state.openSettingsIds.delete(job.id);
+    });
 
-    card.append(info, actions);
+    const actions = document.createElement("div");
+    actions.className = "job-actions";
+    actions.append(
+      badge,
+      makeSwitchRow(ICONS.power, "فعال", job.active, () => toggleJobActive(job)),
+      settingsToggle,
+      deleteBtn,
+    );
+
+    cardTop.append(info, actions);
+    card.append(cardTop, settingsPanel);
     el.appendChild(card);
   }
 }
@@ -393,16 +474,25 @@ function selectJob(jobId) {
   loadStatus();
 }
 
+// Each of these three returns true (applied) or false (rejected/failed) so
+// the switch that triggered it (see makeSwitchRow) knows whether to snap
+// back to its previous position instead of showing a state the server
+// never actually accepted.
+
 async function toggleJobActive(job) {
   try {
     const resp = await apiFetch(`/api/jobs/${job.id}`, {
       method: "PATCH",
       body: JSON.stringify({ active: !job.active }),
     });
-    if (resp.ok) await loadJobs();
+    if (resp.ok) {
+      await loadJobs();
+      return true;
+    }
   } catch {
     /* transient network failure -- next poll will retry */
   }
+  return false;
 }
 
 async function toggleTracking(job, change) {
@@ -418,17 +508,18 @@ async function toggleTracking(job, change) {
     });
     if (resp.ok) {
       await loadJobs();
-    } else {
-      // Rejected e.g. for turning off the only tracking method left on --
-      // reuses the error banner the same way toggleRoundTrip does.
-      const err = await resp.json().catch(() => ({}));
-      const el = document.getElementById("jobs-error-banner");
-      el.hidden = false;
-      el.textContent = err.detail || "خطا در تغییر پایش.";
+      return true;
     }
+    // Rejected e.g. for turning off the only tracking method left on --
+    // reuses the error banner the same way toggleRoundTrip does.
+    const err = await resp.json().catch(() => ({}));
+    const el = document.getElementById("jobs-error-banner");
+    el.hidden = false;
+    el.textContent = err.detail || "خطا در تغییر پایش.";
   } catch {
     /* transient network failure -- user can retry */
   }
+  return false;
 }
 
 async function toggleRoundTrip(job, enabled) {
@@ -439,18 +530,19 @@ async function toggleRoundTrip(job, enabled) {
     });
     if (resp.ok) {
       await loadJobs();
-    } else {
-      // Reuses the error banner (normally for a job stuck in "error"
-      // status) -- the next render (30s poll, or any other job action)
-      // recomputes it back to normal once this stops being relevant.
-      const err = await resp.json().catch(() => ({}));
-      const el = document.getElementById("jobs-error-banner");
-      el.hidden = false;
-      el.textContent = err.detail || "خطا در تغییر رفت‌وبرگشت.";
+      return true;
     }
+    // Reuses the error banner (normally for a job stuck in "error"
+    // status) -- the next render (30s poll, or any other job action)
+    // recomputes it back to normal once this stops being relevant.
+    const err = await resp.json().catch(() => ({}));
+    const el = document.getElementById("jobs-error-banner");
+    el.hidden = false;
+    el.textContent = err.detail || "خطا در تغییر رفت‌وبرگشت.";
   } catch {
     /* transient network failure -- user can retry */
   }
+  return false;
 }
 
 async function deleteJob(job) {
@@ -1045,6 +1137,7 @@ function showAuthGate() {
   setAppVisible(false);
   document.getElementById("auth-panel").hidden = false;
   document.getElementById("account-bar").hidden = true;
+  document.body.classList.add("auth-mode");
 }
 
 function showApp(email) {
@@ -1052,6 +1145,7 @@ function showApp(email) {
   setAppVisible(true);
   document.getElementById("account-bar").hidden = false;
   document.getElementById("account-email").textContent = email;
+  document.body.classList.remove("auth-mode");
 }
 
 async function checkAuth() {
@@ -1076,6 +1170,7 @@ document.getElementById("show-signup").addEventListener("click", () => {
   document.getElementById("show-signup-wrap").hidden = true;
   document.getElementById("show-login-wrap").hidden = false;
   document.getElementById("auth-status").textContent = "";
+  document.getElementById("auth-heading").textContent = "ثبت‌نام";
 });
 
 document.getElementById("show-login").addEventListener("click", () => {
@@ -1084,6 +1179,7 @@ document.getElementById("show-login").addEventListener("click", () => {
   document.getElementById("show-login-wrap").hidden = true;
   document.getElementById("show-signup-wrap").hidden = false;
   document.getElementById("auth-status").textContent = "";
+  document.getElementById("auth-heading").textContent = "ورود";
 });
 
 document.getElementById("login-form").addEventListener("submit", async (e) => {
