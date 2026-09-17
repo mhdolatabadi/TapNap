@@ -79,7 +79,6 @@
     <div class="panel-head">
       <h2><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>نمودار لحظه‌ای — <span id="chart-job-name">—</span></h2>
       <div class="head-controls">
-        <button id="price-chart-reset" class="reset-zoom-btn" hidden><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6"/></svg>بازنشانی بزرگ‌نمایی</button>
         <select id="range-select">
           <option value="6" selected>۶ ساعت اخیر</option>
           <option value="24">۲۴ ساعت اخیر</option>
@@ -89,10 +88,27 @@
       </div>
     </div>
 
-    <p class="chart-hint">برای بزرگ‌نمایی، روی بازه‌ای از نمودار بکشید. محور چپ قیمت (تومان)، محور راست زمان مسیر (دقیقه).</p>
+    <p class="chart-hint">برای بزرگ‌نمایی، روی بازه‌ای از نمودار بکشید — هر دو نمودار با هم بزرگ می‌شن.</p>
 
-    <div class="chart-wrap"><canvas id="price-chart"></canvas></div>
-    <p id="no-data-msg" class="no-data-msg" hidden>هنوز داده‌ای ثبت نشده.</p>
+    <div class="chart-grid">
+      <div class="chart-cell">
+        <div class="sub-head">
+          <h3 class="sub-h">قیمت</h3>
+          <button id="price-chart-reset" class="reset-zoom-btn" hidden><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6"/></svg>بازنشانی بزرگ‌نمایی</button>
+        </div>
+        <div class="chart-wrap"><canvas id="price-chart"></canvas></div>
+        <p id="no-data-msg" class="no-data-msg" hidden>هنوز داده‌ای برای قیمت ثبت نشده.</p>
+      </div>
+
+      <div class="chart-cell">
+        <div class="sub-head">
+          <h3 class="sub-h">زمان مسیر</h3>
+          <button id="travel-chart-reset" class="reset-zoom-btn" hidden><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6"/></svg>بازنشانی بزرگ‌نمایی</button>
+        </div>
+        <div class="chart-wrap"><canvas id="travel-chart"></canvas></div>
+        <p id="travel-no-data-msg" class="no-data-msg" hidden>هنوز داده‌ای برای زمان مسیر ثبت نشده.</p>
+      </div>
+    </div>
 
     <p id="no-job-msg" class="no-data-msg" hidden>هیچ کاری وجود نداره — یکی از پایین اضافه کن.</p>
   </section>
@@ -101,7 +117,6 @@
     <div class="panel-head">
       <h2><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M3 11h18"/></svg>مقایسه روزبه‌روز در ساعت مشخص — <span id="by-day-job-name">—</span></h2>
       <div class="head-controls">
-        <button id="price-by-day-reset" class="reset-zoom-btn" hidden><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6"/></svg>بازنشانی بزرگ‌نمایی</button>
         <label class="tod-label">ساعت
           <input id="tod-time" type="time" value="22:00" step="60">
           <span id="tod-time-fa" class="tod-time-fa"></span>
@@ -114,10 +129,25 @@
       </div>
     </div>
 
-    <p class="chart-hint">محور چپ قیمت (تومان)، محور راست زمان مسیر (دقیقه).</p>
+    <div class="chart-grid">
+      <div class="chart-cell">
+        <div class="sub-head">
+          <h3 class="sub-h">قیمت</h3>
+          <button id="price-by-day-reset" class="reset-zoom-btn" hidden><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6"/></svg>بازنشانی بزرگ‌نمایی</button>
+        </div>
+        <div class="chart-wrap"><canvas id="price-by-day-chart"></canvas></div>
+        <p id="price-by-day-no-data" class="no-data-msg" hidden>برای این بازه و ساعت داده‌ای پیدا نشد.</p>
+      </div>
 
-    <div class="chart-wrap"><canvas id="price-by-day-chart"></canvas></div>
-    <p id="price-by-day-no-data" class="no-data-msg" hidden>برای این بازه و ساعت داده‌ای پیدا نشد.</p>
+      <div class="chart-cell">
+        <div class="sub-head">
+          <h3 class="sub-h">زمان مسیر</h3>
+          <button id="travel-by-day-reset" class="reset-zoom-btn" hidden><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6"/></svg>بازنشانی بزرگ‌نمایی</button>
+        </div>
+        <div class="chart-wrap"><canvas id="travel-by-day-chart"></canvas></div>
+        <p id="travel-by-day-no-data" class="no-data-msg" hidden>برای این بازه و ساعت داده‌ای پیدا نشد.</p>
+      </div>
+    </div>
 
     <p id="by-day-no-job-msg" class="no-data-msg" hidden>هیچ کاری وجود نداره — یکی از پایین اضافه کن.</p>
   </section>
