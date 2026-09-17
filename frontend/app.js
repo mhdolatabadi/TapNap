@@ -1098,6 +1098,7 @@ function showAuthGate() {
   setAppVisible(false);
   document.getElementById("auth-panel").hidden = false;
   document.getElementById("account-bar").hidden = true;
+  document.body.classList.add("auth-mode");
 }
 
 function showApp(email) {
@@ -1105,6 +1106,7 @@ function showApp(email) {
   setAppVisible(true);
   document.getElementById("account-bar").hidden = false;
   document.getElementById("account-email").textContent = email;
+  document.body.classList.remove("auth-mode");
 }
 
 async function checkAuth() {
@@ -1129,6 +1131,7 @@ document.getElementById("show-signup").addEventListener("click", () => {
   document.getElementById("show-signup-wrap").hidden = true;
   document.getElementById("show-login-wrap").hidden = false;
   document.getElementById("auth-status").textContent = "";
+  document.getElementById("auth-heading").textContent = "ثبت‌نام";
 });
 
 document.getElementById("show-login").addEventListener("click", () => {
@@ -1137,6 +1140,7 @@ document.getElementById("show-login").addEventListener("click", () => {
   document.getElementById("show-login-wrap").hidden = true;
   document.getElementById("show-signup-wrap").hidden = false;
   document.getElementById("auth-status").textContent = "";
+  document.getElementById("auth-heading").textContent = "ورود";
 });
 
 document.getElementById("login-form").addEventListener("submit", async (e) => {

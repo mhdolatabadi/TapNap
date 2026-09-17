@@ -19,15 +19,19 @@
 
 <main>
   <section class="panel span-all" id="auth-panel" hidden>
-    <h2>ورود</h2>
+    <h2 id="auth-heading">ورود</h2>
     <form id="login-form" class="auth-form">
-      <input id="login-email" type="email" placeholder="ایمیل" autocomplete="username" required>
-      <input id="login-password" type="password" placeholder="رمز عبور" autocomplete="current-password" required>
+      <label class="field-label" for="login-email">ایمیل</label>
+      <input id="login-email" type="email" placeholder="you@example.com" autocomplete="username" required>
+      <label class="field-label" for="login-password">رمز عبور</label>
+      <input id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" required>
       <button type="submit" class="primary-btn">ورود</button>
     </form>
     <form id="signup-form" class="auth-form" hidden>
-      <input id="signup-email" type="email" placeholder="ایمیل" autocomplete="username" required>
-      <input id="signup-password" type="password" placeholder="رمز عبور (حداقل ۸ کاراکتر)" autocomplete="new-password" required>
+      <label class="field-label" for="signup-email">ایمیل</label>
+      <input id="signup-email" type="email" placeholder="you@example.com" autocomplete="username" required>
+      <label class="field-label" for="signup-password">رمز عبور (حداقل ۸ کاراکتر)</label>
+      <input id="signup-password" type="password" placeholder="••••••••" autocomplete="new-password" required>
       <button type="submit" class="primary-btn">ثبت‌نام</button>
     </form>
     <p id="auth-status" class="save-status"></p>
