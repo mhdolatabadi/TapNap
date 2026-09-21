@@ -138,7 +138,8 @@ body.auth-mode main {
   margin-bottom: -4px;
 }
 
-.auth-form input {
+.auth-form input,
+.auth-form select {
   background: var(--surface-2);
   color: var(--text);
   border: 1px solid var(--line);
@@ -146,6 +147,37 @@ body.auth-mode main {
   padding: 9px 10px;
   font-family: inherit;
   font-size: 14px;
+}
+
+.premium-sub {
+  margin-bottom: 20px;
+}
+
+.premium-sub .auth-form {
+  margin: 8px 0 0;
+}
+
+.alert-item,
+.apikey-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.apikey-raw {
+  font-family: monospace;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  word-break: break-all;
+  user-select: all;
 }
 
 .auth-switch {
