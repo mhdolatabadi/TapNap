@@ -156,6 +156,50 @@
     <h2><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 8 4-16 2 8h6"/></svg>وضعیت دریافت — <span id="status-job-name">—</span></h2>
     <div id="status-list">در حال بارگذاری…</div>
   </section>
+
+  <section class="panel span-all" id="premium-panel" data-app-section>
+    <div class="panel-head">
+      <h2><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.3l-6.1 3.3 1.4-6.8-5.1-4.7 6.9-.8z"/></svg>امکانات premium</h2>
+    </div>
+    <p id="premium-gate" class="save-status" hidden>این بخش (هشدار قیمت و کلید API) فقط برای حساب‌های premium فعاله. برای فعال‌سازی با مدیر سیستم تماس بگیر.</p>
+    <div id="premium-content" hidden>
+      <div class="premium-sub">
+        <h3 class="sub-h">اتصال به ربات بله (برای دریافت هشدار قیمت)</h3>
+        <p id="bale-status">—</p>
+        <button id="bale-link-btn" class="job-btn" type="button">دریافت کد اتصال</button>
+        <p id="bale-code-display" class="save-status" hidden></p>
+      </div>
+
+      <div class="premium-sub">
+        <h3 class="sub-h">هشدار قیمت — <span id="alerts-job-name">—</span></h3>
+        <div id="alerts-list"></div>
+        <form id="alert-form" class="auth-form">
+          <select id="alert-provider">
+            <option value="">هر دو سرویس (اسنپ و تپسی)</option>
+            <option value="snapp">فقط اسنپ</option>
+            <option value="tapsi">فقط تپسی</option>
+          </select>
+          <select id="alert-direction">
+            <option value="below">وقتی قیمت کمتر یا مساوی شد</option>
+            <option value="above">وقتی قیمت بیشتر یا مساوی شد</option>
+          </select>
+          <input id="alert-threshold" type="number" min="1" step="1000" placeholder="آستانه قیمت (تومان)" required>
+          <button type="submit" class="primary-btn">افزودن هشدار</button>
+        </form>
+        <p id="alert-status" class="save-status"></p>
+      </div>
+
+      <div class="premium-sub">
+        <h3 class="sub-h">کلیدهای API (برای مشتری‌های B2B)</h3>
+        <div id="apikeys-list"></div>
+        <form id="apikey-form" class="auth-form">
+          <input id="apikey-name" type="text" placeholder="نام مشتری یا سرویس" required>
+          <button type="submit" class="primary-btn">ساخت کلید جدید</button>
+        </form>
+        <p id="apikey-status" class="save-status"></p>
+      </div>
+    </div>
+  </section>
 </main>
 
 <script src="/vendor/leaflet.js"></script>

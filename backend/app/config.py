@@ -31,6 +31,17 @@ NESHAN_FETCH_INTERVAL_MINUTES = int(
 # cycles re-asking (and adding to the overage) until this cooldown passes.
 NESHAN_BACKOFF_MINUTES = int(os.environ.get("NESHAN_BACKOFF_MINUTES", "180"))
 
+# Bale (ir.bale.ai) bot token for price-alert delivery -- a static app
+# token like NESHAN_API_KEY, not a per-user credential, so it lives in an
+# env var rather than credentials.json. Alert linking/delivery is simply
+# skipped (see scheduler.poll_bale_updates and _dispatch_alerts) if unset.
+BALE_BOT_TOKEN = os.environ.get("BALE_BOT_TOKEN", "")
+
+# How long an already-firing alert stays quiet before it's allowed to fire
+# again, so a price sitting past the threshold doesn't page the user on
+# every single FETCH_INTERVAL_MINUTES poll.
+ALERT_COOLDOWN_MINUTES = int(os.environ.get("ALERT_COOLDOWN_MINUTES", "60"))
+
 # Default route: Azadi Square -> Milad Tower, Tehran
 DEFAULT_ORIGIN = {"lat": 35.6997, "lng": 51.3380, "label": "میدان آزادی"}
 DEFAULT_DESTINATION = {"lat": 35.7448, "lng": 51.3752, "label": "برج میلاد"}

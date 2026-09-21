@@ -1,6 +1,8 @@
+import hashlib
 import hmac
 import logging
 import re
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -81,6 +83,16 @@ class SignupIn(BaseModel):
     password: str
 
 
+class PriceAlertIn(BaseModel):
+    provider: str | None = None
+    direction: str = "below"
+    threshold_toman: int
+
+
+class ApiKeyIn(BaseModel):
+    name: str
+
+
 class LoginIn(BaseModel):
     email: str
     password: str
@@ -118,6 +130,26 @@ def _check_admin_password(x_admin_password: str | None):
     expected = config.load_credentials().get("admin_password")
     if not expected or not x_admin_password or not hmac.compare_digest(x_admin_password, expected):
         raise HTTPException(401, "invalid admin password")
+
+
+def _require_premium(user: dict):
+    if not user["is_premium"]:
+        raise HTTPException(402, "این امکان فقط برای حساب‌های premium فعاله")
+
+
+def _current_user_via_api_key(x_api_key: str | None = Header(default=None)) -> dict:
+    """Auth for the /api/b2b/* endpoints -- a long-lived API key instead of
+    a session cookie, scoped to whichever account generated it (see
+    POST /api/apikeys). Distinct from _current_user/_check_admin_password:
+    this identifies a paying B2B integrator, not a browser session or the
+    operator."""
+    if not x_api_key:
+        raise HTTPException(401, "X-API-Key header required")
+    key_hash = hashlib.sha256(x_api_key.encode()).hexdigest()
+    user = db.get_user_by_api_key_hash(key_hash)
+    if user is None:
+        raise HTTPException(401, "invalid or revoked API key")
+    return user
 
 
 def _get_job_or_404(job_id: int, user_id: int) -> dict:
@@ -261,6 +293,88 @@ def api_get_job_travel_times(job_id: int, hours: int = 24, user: dict = Depends(
     return db.get_travel_times(job_id, since)
 
 
+@app.post("/api/bale/link-code")
+def api_bale_link_code(user: dict = Depends(_current_user)):
+    """Generates a one-time code the user pastes into the bot as
+    "/start <code>" (see scheduler.poll_bale_updates) to link their
+    account to a Bale chat for alert delivery."""
+    _require_premium(user)
+    if not config.BALE_BOT_TOKEN:
+        raise HTTPException(503, "ربات بله روی این سرور تنظیم نشده")
+    code = secrets.token_hex(4)
+    db.set_bale_link_code(user["id"], code)
+    return {"code": code}
+
+
+@app.get("/api/jobs/{job_id}/alerts")
+def api_list_alerts(job_id: int, user: dict = Depends(_current_user)):
+    _get_job_or_404(job_id, user["id"])
+    return db.get_alerts_for_job(job_id, user["id"])
+
+
+@app.post("/api/jobs/{job_id}/alerts")
+def api_create_alert(job_id: int, body: PriceAlertIn, user: dict = Depends(_current_user)):
+    _require_premium(user)
+    _get_job_or_404(job_id, user["id"])
+    if not user["bale_linked"]:
+        raise HTTPException(409, "اول باید حساب رو به ربات بله وصل کنی")
+    if body.provider not in (None, "snapp", "tapsi"):
+        raise HTTPException(400, "provider باید snapp، tapsi یا خالی باشه")
+    if body.direction not in ("below", "above"):
+        raise HTTPException(400, "direction باید below یا above باشه")
+    if body.threshold_toman <= 0:
+        raise HTTPException(400, "threshold_toman باید مثبت باشه")
+    return db.create_price_alert(user["id"], job_id, body.provider, body.direction, body.threshold_toman)
+
+
+@app.delete("/api/alerts/{alert_id}")
+def api_delete_alert(alert_id: int, user: dict = Depends(_current_user)):
+    if not db.delete_price_alert(alert_id, user["id"]):
+        raise HTTPException(404, "alert not found")
+    return {"ok": True}
+
+
+@app.get("/api/apikeys")
+def api_list_api_keys(user: dict = Depends(_current_user)):
+    return db.list_api_keys(user["id"])
+
+
+@app.post("/api/apikeys")
+def api_create_api_key(body: ApiKeyIn, user: dict = Depends(_current_user)):
+    """The raw key is returned exactly once, here -- only its sha256 is
+    ever stored (see db.create_api_key), same as a password, so it can't
+    be recovered later, only revoked and reissued."""
+    _require_premium(user)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+    raw_key = f"tnk_{secrets.token_urlsafe(32)}"
+    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    created = db.create_api_key(user["id"], name, key_hash)
+    return {**created, "key": raw_key}
+
+
+@app.delete("/api/apikeys/{key_id}")
+def api_revoke_api_key(key_id: int, user: dict = Depends(_current_user)):
+    if not db.revoke_api_key(key_id, user["id"]):
+        raise HTTPException(404, "api key not found")
+    return {"ok": True}
+
+
+@app.get("/api/b2b/jobs")
+def api_b2b_list_jobs(user: dict = Depends(_current_user_via_api_key)):
+    return [{"id": j["id"], "name": j["name"]} for j in db.get_jobs(user["id"])]
+
+
+@app.get("/api/b2b/jobs/{job_id}/analytics")
+def api_b2b_job_analytics(job_id: int, hours: int = 24, user: dict = Depends(_current_user_via_api_key)):
+    _get_job_or_404(job_id, user["id"])
+    if hours <= 0 or hours > 24 * 30:
+        raise HTTPException(400, "hours must be between 1 and 720")
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    return {"job_id": job_id, "hours": hours, "providers": db.get_price_analytics(job_id, since)}
+
+
 @app.post("/api/auth/signup")
 def api_signup(body: SignupIn, response: Response):
     email = _normalize_email(body.email)
@@ -305,7 +419,7 @@ def api_logout(response: Response, session: str | None = Cookie(default=None)):
 
 @app.get("/api/auth/me")
 def api_me(user: dict = Depends(_current_user)):
-    return {"email": user["email"]}
+    return {"email": user["email"], "is_premium": user["is_premium"], "bale_linked": user["bale_linked"]}
 
 
 @app.post("/api/fetch-now")

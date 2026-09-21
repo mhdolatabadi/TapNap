@@ -1,9 +1,10 @@
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from . import config, db
+from . import bale, config, db
 from .providers import neshan, snapp, tapsi
 from .providers.errors import ProviderAuthError, ProviderError, ProviderRateLimited
 
@@ -16,6 +17,14 @@ PROVIDERS = {"snapp": snapp.fetch, "tapsi": tapsi.fetch}
 # single-process scheduler, and losing it on restart just means one extra
 # doomed attempt rather than any real inconsistency.
 _neshan_backoff_until: datetime | None = None
+
+# Highest Bale update_id processed so far + 1 -- same in-memory,
+# single-process reasoning as _neshan_backoff_until above; losing this on
+# restart just means Bale redelivers a few already-handled updates, and
+# claim_bale_link_code() is a no-op for a code that's already been consumed.
+_bale_update_offset: int | None = None
+
+_BALE_START_RE = re.compile(r"^/start\s+(\S+)")
 
 
 def fetch_prices():
@@ -48,6 +57,7 @@ def fetch_prices():
 
             for r in results:
                 db.insert_price(name, job_id, origin, destination, r["service_name"], r["price"], raw)
+                _dispatch_alerts(job, name, r["service_name"], r["price"])
 
             if results:
                 db.log_fetch(name, job_id, origin, destination, ok=True, message=f"{len(results)} service(s)")
@@ -136,6 +146,77 @@ def _fetch_travel_times(job_id: int, origin: dict, destination: dict) -> bool:
     return False
 
 
+def _dispatch_alerts(job: dict, provider: str, service_name: str, price):
+    """Checks every active price_alert on this job against the price just
+    stored for (provider, service_name) and pings the owner's linked Bale
+    chat when the threshold is crossed. Silently a no-op if BALE_BOT_TOKEN
+    isn't configured, the alert's owner lost premium, or they never linked
+    a chat -- same "just skip it" posture as an unconfigured Snapp/Tapsi
+    token, rather than raising and interrupting the price-fetch loop."""
+    if not config.BALE_BOT_TOKEN or price is None:
+        return
+
+    now = datetime.now(timezone.utc)
+    for alert in db.get_active_alerts_for_job(job["id"]):
+        if not alert["is_premium"] or not alert["bale_chat_id"]:
+            continue
+        if alert["provider"] is not None and alert["provider"] != provider:
+            continue
+
+        crossed = (
+            price <= alert["threshold_toman"] if alert["direction"] == "below" else price >= alert["threshold_toman"]
+        )
+        if not crossed:
+            continue
+
+        if alert["last_triggered_at"]:
+            last = datetime.fromisoformat(alert["last_triggered_at"])
+            if now - last < timedelta(minutes=config.ALERT_COOLDOWN_MINUTES):
+                continue
+
+        direction_fa = "کمتر یا مساوی" if alert["direction"] == "below" else "بیشتر یا مساوی"
+        text = (
+            f"⏰ هشدار قیمت «{job['name']}»\n"
+            f"{provider} / {service_name}: {price:,} تومان\n"
+            f"({direction_fa} آستانه {alert['threshold_toman']:,} تومان)"
+        )
+        try:
+            bale.send_message(config.BALE_BOT_TOKEN, alert["bale_chat_id"], text)
+            db.mark_alert_triggered(alert["id"])
+        except Exception:
+            log.exception("bale: failed to send alert %s", alert["id"])
+
+
+def poll_bale_updates():
+    """Runs on its own short interval (see start_scheduler) to pick up
+    /start <link_code> messages sent to the bot and complete account
+    linking -- see db.set_bale_link_code/claim_bale_link_code and
+    POST /api/bale/link-code. A no-op entirely if BALE_BOT_TOKEN isn't
+    configured, matching how travel-time polling skips itself when
+    NESHAN_API_KEY is unset."""
+    global _bale_update_offset
+    if not config.BALE_BOT_TOKEN:
+        return
+
+    try:
+        updates = bale.get_updates(config.BALE_BOT_TOKEN, _bale_update_offset)
+    except Exception:
+        log.exception("bale: failed to poll updates")
+        return
+
+    for update in updates:
+        _bale_update_offset = update["update_id"] + 1
+        text = (update.get("message") or {}).get("text") or ""
+        chat_id = (update.get("message") or {}).get("chat", {}).get("id")
+        match = _BALE_START_RE.match(text)
+        if not match or chat_id is None:
+            continue
+
+        user = db.claim_bale_link_code(match.group(1), str(chat_id))
+        if user is not None:
+            bale.send_message(config.BALE_BOT_TOKEN, str(chat_id), "✅ حساب Tapnap شما به این ربات وصل شد.")
+
+
 def start_scheduler() -> BackgroundScheduler:
     scheduler = BackgroundScheduler(timezone="UTC")
     scheduler.add_job(
@@ -151,6 +232,14 @@ def start_scheduler() -> BackgroundScheduler:
         "interval",
         minutes=config.NESHAN_FETCH_INTERVAL_MINUTES,
         id="fetch_travel_times",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        poll_bale_updates,
+        "interval",
+        seconds=20,
+        id="poll_bale_updates",
         max_instances=1,
         coalesce=True,
     )

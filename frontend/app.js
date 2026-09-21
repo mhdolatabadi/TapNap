@@ -8,6 +8,10 @@ const state = {
   // round-trip switches) panel expanded -- kept outside renderJobs() so a
   // card the user has open stays open across the 30s poll's re-render.
   openSettingsIds: new Set(),
+  // Current account, as returned by GET /api/auth/me -- gates the
+  // premium panel (price alerts, API keys). Refreshed on login/signup
+  // and after actions that can change it (linking Bale).
+  me: null,
 };
 
 // Small hand-drawn outline icons (no external icon font -- this app already
@@ -456,7 +460,9 @@ async function loadJobs() {
   }
 
   renderJobs();
-  await Promise.all([loadChart(), loadTravelChart(), loadByDayCharts(), loadStatus()]);
+  const tasks = [loadChart(), loadTravelChart(), loadByDayCharts(), loadStatus()];
+  if (state.me && state.me.is_premium) tasks.push(loadAlerts());
+  await Promise.all(tasks);
 }
 
 function selectJob(jobId) {
@@ -472,6 +478,7 @@ function selectJob(jobId) {
   loadTravelChart();
   loadByDayCharts();
   loadStatus();
+  if (state.me && state.me.is_premium) loadAlerts();
 }
 
 // Each of these three returns true (applied) or false (rejected/failed) so
@@ -1125,6 +1132,164 @@ async function loadStatus() {
   }
 }
 
+// ---- premium: price alerts + B2B API keys ----
+
+const ALERT_PROVIDER_LABELS = { snapp: "اسنپ", tapsi: "تپسی" };
+
+function renderPremiumGate() {
+  const isPremium = !!(state.me && state.me.is_premium);
+  document.getElementById("premium-gate").hidden = isPremium;
+  document.getElementById("premium-content").hidden = !isPremium;
+  if (isPremium) {
+    renderBaleStatus();
+    loadAlerts();
+    loadApiKeys();
+  }
+}
+
+function renderBaleStatus() {
+  document.getElementById("bale-status").textContent =
+    state.me && state.me.bale_linked ? "متصل ✅" : "هنوز به ربات بله وصل نشده.";
+}
+
+document.getElementById("bale-link-btn").addEventListener("click", async () => {
+  const display = document.getElementById("bale-code-display");
+  display.hidden = false;
+  display.textContent = "در حال ساخت کد…";
+  try {
+    const resp = await apiFetch("/api/bale/link-code", { method: "POST" });
+    const data = await resp.json().catch(() => ({}));
+    display.textContent = resp.ok
+      ? `به ربات بله برو و این پیام رو بفرست: /start ${data.code}`
+      : data.detail || "خطا در ساخت کد.";
+  } catch {
+    display.textContent = "سرور در دسترس نیست.";
+  }
+});
+
+async function loadAlerts() {
+  const job = selectedJob();
+  document.getElementById("alerts-job-name").textContent = job ? job.name : "—";
+  const listEl = document.getElementById("alerts-list");
+  if (!job) {
+    listEl.textContent = "هیچ کاری انتخاب نشده";
+    return;
+  }
+  try {
+    const resp = await fetch(`/api/jobs/${job.id}/alerts`);
+    if (!resp.ok) throw new Error("bad response");
+    const alerts = await resp.json();
+    listEl.innerHTML = "";
+    if (!alerts.length) {
+      listEl.textContent = "برای این کار هنوز هشداری تنظیم نشده.";
+      return;
+    }
+    for (const a of alerts) {
+      const row = document.createElement("div");
+      row.className = "alert-item";
+      const providerLabel = a.provider ? ALERT_PROVIDER_LABELS[a.provider] || a.provider : "هر دو سرویس";
+      const directionLabel = a.direction === "below" ? "≤" : "≥";
+      row.innerHTML = `<span>${providerLabel} ${directionLabel} ${a.threshold_toman.toLocaleString("fa-IR")} تومان</span>`;
+      const delBtn = document.createElement("button");
+      delBtn.className = "job-btn job-btn-danger";
+      delBtn.type = "button";
+      delBtn.textContent = "حذف";
+      delBtn.addEventListener("click", async () => {
+        await apiFetch(`/api/alerts/${a.id}`, { method: "DELETE" });
+        loadAlerts();
+      });
+      row.appendChild(delBtn);
+      listEl.appendChild(row);
+    }
+  } catch {
+    listEl.textContent = "سرور در دسترس نیست";
+  }
+}
+
+document.getElementById("alert-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("alert-status");
+  const job = selectedJob();
+  if (!job) {
+    statusEl.textContent = "اول یک کار انتخاب کن.";
+    return;
+  }
+  const provider = document.getElementById("alert-provider").value || null;
+  const direction = document.getElementById("alert-direction").value;
+  const threshold_toman = Number(document.getElementById("alert-threshold").value);
+  statusEl.textContent = "در حال ذخیره…";
+  try {
+    const resp = await apiFetch(`/api/jobs/${job.id}/alerts`, {
+      method: "POST",
+      body: JSON.stringify({ provider, direction, threshold_toman }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok) {
+      statusEl.textContent = "";
+      document.getElementById("alert-form").reset();
+      loadAlerts();
+    } else {
+      statusEl.textContent = data.detail || "خطا در ذخیره هشدار.";
+    }
+  } catch {
+    statusEl.textContent = "سرور در دسترس نیست.";
+  }
+});
+
+async function loadApiKeys() {
+  const listEl = document.getElementById("apikeys-list");
+  try {
+    const resp = await fetch("/api/apikeys");
+    if (!resp.ok) throw new Error("bad response");
+    const keys = await resp.json();
+    listEl.innerHTML = "";
+    if (!keys.length) {
+      listEl.textContent = "هنوز کلیدی ساخته نشده.";
+      return;
+    }
+    for (const k of keys) {
+      const row = document.createElement("div");
+      row.className = "apikey-item";
+      row.innerHTML = `<span>${k.name}${k.revoked ? " (باطل‌شده)" : ""}</span>`;
+      if (!k.revoked) {
+        const revokeBtn = document.createElement("button");
+        revokeBtn.className = "job-btn job-btn-danger";
+        revokeBtn.type = "button";
+        revokeBtn.textContent = "ابطال";
+        revokeBtn.addEventListener("click", async () => {
+          await apiFetch(`/api/apikeys/${k.id}`, { method: "DELETE" });
+          loadApiKeys();
+        });
+        row.appendChild(revokeBtn);
+      }
+      listEl.appendChild(row);
+    }
+  } catch {
+    listEl.textContent = "سرور در دسترس نیست";
+  }
+}
+
+document.getElementById("apikey-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("apikey-status");
+  const name = document.getElementById("apikey-name").value.trim();
+  if (!name) return;
+  statusEl.textContent = "در حال ساخت…";
+  try {
+    const resp = await apiFetch("/api/apikeys", { method: "POST", body: JSON.stringify({ name }) });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok) {
+      document.getElementById("apikey-form").reset();
+      statusEl.innerHTML = `کلید ساخته شد — همین الان کپی کن، دیگه نشون داده نمی‌شه:<br><span class="apikey-raw">${data.key}</span>`;
+      loadApiKeys();
+    } else {
+      statusEl.textContent = data.detail || "خطا در ساخت کلید.";
+    }
+  } catch {
+    statusEl.textContent = "سرور در دسترس نیست.";
+  }
+});
+
 // ---- auth ----
 
 function setAppVisible(visible) {
@@ -1146,15 +1311,20 @@ function showApp(email) {
   document.getElementById("account-bar").hidden = false;
   document.getElementById("account-email").textContent = email;
   document.body.classList.remove("auth-mode");
+  renderPremiumGate();
 }
 
 async function checkAuth() {
   try {
     const resp = await fetch("/api/auth/me");
-    if (resp.ok) return await resp.json();
+    if (resp.ok) {
+      state.me = await resp.json();
+      return state.me;
+    }
   } catch {
     /* treated as logged out below */
   }
+  state.me = null;
   return null;
 }
 
@@ -1193,6 +1363,7 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
     const data = await resp.json().catch(() => ({}));
     if (resp.ok) {
       statusEl.textContent = "";
+      await checkAuth();
       showApp(data.email);
       await startApp();
     } else {
@@ -1215,6 +1386,7 @@ document.getElementById("signup-form").addEventListener("submit", async (e) => {
     if (resp.ok) {
       if (data.approved) {
         statusEl.textContent = "";
+        await checkAuth();
         showApp(data.email);
         await startApp();
       } else {
